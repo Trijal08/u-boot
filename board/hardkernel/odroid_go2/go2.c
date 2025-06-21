@@ -23,6 +23,7 @@ enum oga_device_id {
 	OGA,
 	OGA_V11,
 	OGS,
+	GENERIC
 };
 
 /*
@@ -48,6 +49,12 @@ static const struct oga_model oga_model_details[] = {
 		"ODROID-GO Super",
 		DTB_DIR "rk3326-odroid-go3.dtb",
 	},
+	[GENERIC] = {
+		65000,
+		"rk3326-generic",
+		"UNKNOWN",
+		DTB_DIR "rk3326-generic.dtb",
+	},
 };
 
 /* Detect which Odroid Go Advance device we are using so as to load the
@@ -72,15 +79,15 @@ int oga_detect_device(void)
 	 * accounted for this with a 5% tolerance, so assume a +- value
 	 * of 50 should be enough.
 	 */
-	for (i = 0; i < ARRAY_SIZE(oga_model_details); i++) {
+	for (i = 0; i < ARRAY_SIZE(oga_model_details) - 1; i++) {
 		u32 adc_min = oga_model_details[i].adc_value - 50;
 		u32 adc_max = oga_model_details[i].adc_value + 50;
 
 		if (adc_min < adc_info && adc_max > adc_info) {
-			board_id = i;
 			break;
 		}
 	}
+	board_id = i;
 
 	if (board_id < 0)
 		return board_id;
@@ -89,6 +96,7 @@ int oga_detect_device(void)
 	env_set("board_name",
 		oga_model_details[board_id].board_name);
 	env_set("fdtfile", oga_model_details[board_id].fdtfile);
+	env_set_ulong("hwid_adc", adc_info);
 
 	return 0;
 }
