@@ -6,6 +6,7 @@
  */
 
 #include <asm/armv8/mmu.h>
+#include <asm/io.h>
 #include <blk.h>
 #include <bootflow.h>
 #include <ctype.h>
@@ -22,6 +23,13 @@
 #include <string.h>
 
 DECLARE_GLOBAL_DATA_PTR;
+
+#define ZUMAPRO_DECON0_BASE			0x19470000
+#define ZUMAPRO_DECON_HW_SW_TRIG_CONTROL	0x30
+#define ZUMAPRO_WDT_CL0_BASE			0x10060000
+#define ZUMAPRO_WDT_CL1_BASE			0x10070000
+#define ZUMAPRO_WDT_WTCON			0x00
+#define ZUMAPRO_WDT_DISABLE_MASK		((1 << 5) | (1 << 2))
 
 #define lmb_alloc(size, addr) \
 	lmb_alloc_mem(LMB_MEM_ALLOC_ANY, SZ_2M, addr, size, LMB_NONE)
@@ -129,9 +137,40 @@ static void exynos_parse_dram_banks(const void *fdt_base)
 	}
 }
 
+static bool exynos_is_google_zumapro(void)
+{
+	ofnode root = ofnode_root();
+
+	return ofnode_device_is_compatible(root, "google,zumapro") ||
+	       ofnode_device_is_compatible(root, "google,zumapro-komodo") ||
+	       ofnode_device_is_compatible(root, "google,komodo");
+}
+
+static void exynos_google_zumapro_early_init(void)
+{
+	u32 val;
+
+	/*
+	 * Keep the display pipeline writable if earlier boot stages already
+	 * configured scanout, and stop both cluster watchdogs from resetting
+	 * the board during bring-up.
+	 */
+	writel(0x3061, (void *)(ZUMAPRO_DECON0_BASE +
+				 ZUMAPRO_DECON_HW_SW_TRIG_CONTROL));
+
+	val = readl((void *)(ZUMAPRO_WDT_CL0_BASE + ZUMAPRO_WDT_WTCON));
+	val &= ~ZUMAPRO_WDT_DISABLE_MASK;
+	writel(val, (void *)(ZUMAPRO_WDT_CL0_BASE + ZUMAPRO_WDT_WTCON));
+
+	val = readl((void *)(ZUMAPRO_WDT_CL1_BASE + ZUMAPRO_WDT_WTCON));
+	val &= ~ZUMAPRO_WDT_DISABLE_MASK;
+	writel(val, (void *)(ZUMAPRO_WDT_CL1_BASE + ZUMAPRO_WDT_WTCON));
+}
+
 static void exynos_env_setup(void)
 {
 	const char *bootargs = exynos_prev_bl_get_bootargs();
+	phys_addr_t prev_bl_fdt_addr = get_prev_bl_fdt_addr();
 	const char *dev_compatible, *soc_compatible;
 	char *ptr;
 	char buf[128];
@@ -147,6 +186,9 @@ static void exynos_env_setup(void)
 			env_set("serial#", buf);
 		}
 	}
+
+	if (prev_bl_fdt_addr)
+		env_set_hex("fdt_addr_r", prev_bl_fdt_addr);
 
 	nr_compatibles = ofnode_read_string_count(ofnode_root(), "compatible");
 	if (nr_compatibles < 2) {
@@ -321,6 +363,9 @@ int timer_init(void)
 
 int board_early_init_f(void)
 {
+	if (exynos_is_google_zumapro())
+		exynos_google_zumapro_early_init();
+
 	exynos_parse_dram_banks(gd->fdt_blob);
 
 	return 0;
@@ -366,7 +411,11 @@ int misc_init_r(void)
 
 	ret = exynos_blk_env_setup();
 	if (ret)
-		return ret;
+		log_warning("%s: block env setup skipped (%d)\n", __func__, ret);
 
-	return exynos_fastboot_setup();
+	ret = exynos_fastboot_setup();
+	if (ret)
+		log_warning("%s: fastboot setup skipped (%d)\n", __func__, ret);
+
+	return 0;
 }

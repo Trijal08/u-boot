@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Minimal U-Boot bring-up device tree for Pixel 9 Pro XL (komodo)
+ */
+
+/dts-v1/;
+
+/ {
+	model = "Pixel 9 Pro XL";
+	compatible = "google,komodo", "google,zumapro-komodo", "google,zumapro";
+	#address-cells = <2>;
+	#size-cells = <1>;
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	chosen {
+		#address-cells = <2>;
+		#size-cells = <1>;
+		stdout-path = "serial0:115200n8";
+
+		framebuffer@fac00000 {
+			compatible = "simple-framebuffer";
+			reg = <0x0 0xfac00000 0x00f5a000>;
+			width = <1344>;
+			height = <2992>;
+			stride = <5376>;
+			format = "a8r8g8b8";
+		};
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		clock-frequency = <26000000>;
+	};
+
+	memory@b80000000 {
+		device_type = "memory";
+		reg = <0x0b 0x80000000 0x60f83000>;
+	};
+
+	memory@b00000000 {
+		device_type = "memory";
+		reg = <0x0b 0x00000000 0x80000000>;
+	};
+
+	memory@a80000000 {
+		device_type = "memory";
+		reg = <0x0a 0x80000000 0x80000000>;
+	};
+
+	memory@a00000000 {
+		device_type = "memory";
+		reg = <0x0a 0x00000000 0x80000000>;
+	};
+
+	memory@980000000 {
+		device_type = "memory";
+		reg = <0x09 0x80000000 0x80000000>;
+	};
+
+	memory@900000000 {
+		device_type = "memory";
+		reg = <0x09 0x00000000 0x80000000>;
+	};
+
+	memory@880000000 {
+		device_type = "memory";
+		reg = <0x08 0x80000000 0x80000000>;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x00 0x80000000 0x80000000>;
+	};
+
+	uart0: uart@10870000 {
+		compatible = "google,zuma-uart", "google,gs101-uart";
+		reg = <0x0 0x10870000 0x100>;
+		reg-io-width = <4>;
+		clock-frequency = <24576000>;
+		skip-init;
+		status = "okay";
+	};
+};
