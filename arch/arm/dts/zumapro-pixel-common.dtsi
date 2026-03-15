@@ -1,0 +1,727 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Device Tree nodes common for all zumapro-based Pixel phones
+ *
+ * Copyright 2021-2023 Google LLC
+ * Copyright 2023 Linaro Ltd - <peter.griffin@linaro.org>
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/usb/pd.h>
+#include "zumapro-pinctrl.h"
+#include "zumapro.dtsi"
+
+/ {
+	aliases {
+		serial0 = &serial_0;
+	};
+
+	chosen {
+		/* Bootloader expects bootargs specified otherwise it crashes */
+		bootargs = "clk_ignore_unused regulator_ignore_unused earlycon=exynos4210,0x10870000 pmos_boot_uuid=949f4d35-a75c-4f76-8c77-9185553c02e5 pmos_root_uuid=7cdd8916-05c6-4b7c-a6c2-5ab643948365 pmos_rootfsopts=defaults";
+		stdout-path = &serial_0;
+
+		/* Use display framebuffer as setup by bootloader */
+		framebuffer0: framebuffer-0 {
+			compatible = "simple-framebuffer";
+			memory-region = <&cont_splash_mem>;
+			/* format properties to be added by actual board */
+			status = "disabled";
+		};
+	};
+
+	// decon_autorefresh_bit: mmio-init@19470030 {
+	// 	compatible = "linux,mmio-init-helper";
+	// 	reg = <0 0x19470030 0x4>;
+	// 	value = <0x3061>;
+	// };
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-0 = <&key_voldown>, <&key_volup>, <&key_power>;
+		pinctrl-names = "default";
+
+		button-vol-down {
+			label = "KEY_VOLUMEDOWN";
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpios = <&gpa4 1 GPIO_ACTIVE_LOW>;
+			wakeup-source;
+		};
+
+		button-vol-up {
+			label = "KEY_VOLUMEUP";
+			linux,code = <KEY_VOLUMEUP>;
+			gpios = <&gpa6 2 GPIO_ACTIVE_LOW>;
+			wakeup-source;
+		};
+
+		button-power {
+			label = "KEY_POWER";
+			linux,code = <KEY_POWER>;
+			gpios = <&gpa4 0 GPIO_ACTIVE_LOW>;
+			wakeup-source;
+		};
+	};
+
+	reboot-mode {
+		compatible = "nvmem-reboot-mode";
+		nvmem-cells = <&nvmem_reboot_mode>;
+		nvmem-cell-names = "reboot-mode";
+		mode-bootloader = <0x800000fc>;
+		mode-charge = <0x8000000a>;
+		mode-dm-verity-device-corrupted = <0x80000050>;
+		mode-fastboot = <0x800000fa>;
+		mode-reboot-ab-update = <0x80000052>;
+		mode-recovery = <0x800000ff>;
+		mode-rescue = <0x800000f9>;
+		mode-shutdown-thermal = <0x80000051>;
+		mode-shutdown-thermal-battery = <0x80000051>;
+	};
+
+	/* TODO: Remove this once PMIC is implemented  */
+	reg_placeholder: regulator-0 {
+		compatible = "regulator-fixed";
+		regulator-name = "placeholder_reg";
+	};
+
+	/* TODO: Remove this once S2MPG11 slave PMIC is implemented  */
+	ufs_0_fixed_vcc_reg: regulator-1 {
+		compatible = "regulator-fixed";
+		regulator-name = "ufs-vcc";
+		gpio = <&gpp0 1 GPIO_ACTIVE_HIGH>;
+		regulator-boot-on;
+		enable-active-high;
+	};
+
+	reserved-memory {
+		cont_splash_mem: splash@fac00000 {
+			/* size to be updated by actual board */
+			reg = <0x0 0xfac00000 0x0>;
+			no-map;
+			status = "disabled";
+		};
+	};
+};
+
+&acpm_ipc {
+	pmic-1 {
+		compatible = "samsung,s2mpg14-pmic";
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 75 IRQ_TYPE_LEVEL_HIGH 0>;
+		system-power-controller;
+		wakeup-source;
+
+		regulators {
+			m_buck7_reg: buck7m {
+				/* TPU rail on zumapro */
+				regulator-name = "vdd_tpu";
+				regulator-min-microvolt = <450000>;
+				regulator-max-microvolt = <1300000>;
+				regulator-ramp-delay = <6250>;
+				regulator-always-on;
+			};
+
+			m_ldo4_reg: ldo4m {
+				/* Touch AVDD rail on zuma/zumapro */
+				regulator-name = "vdd_touch_avdd";
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+			};
+
+			m_ldo5_reg: ldo5m {
+				/* 1.8V always-on rail from main PMIC */
+				regulator-name = "vdd_1p8_main";
+				regulator-min-microvolt = <1600000>;
+				regulator-max-microvolt = <1950000>;
+				regulator-always-on;
+			};
+
+			m_ldo25_reg: ldo25m {
+				/* Touch DVDD rail on zuma/zumapro */
+				regulator-name = "vdd_touch_dvdd";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+			};
+		};
+
+		s2mpg14_gpio: gpio {
+			compatible = "samsung,s2mpg14-gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+			ngpios = <6>;
+			gpio-ranges = <&s2mpg14_pinctrl 0 0 6>;
+		};
+
+		s2mpg14_pinctrl: pinctrl {
+		};
+	};
+
+	pmic-2 {
+		compatible = "samsung,s2mpg15-pmic";
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 76 IRQ_TYPE_LEVEL_HIGH 0>;
+		wakeup-source;
+
+		regulators {
+			s_buck2_reg: buck2s {
+				/* GPU */
+				regulator-name = "vdd_g3d";
+				regulator-min-microvolt = <450000>;
+				regulator-max-microvolt = <1300000>;
+				regulator-ramp-delay = <6250>;
+				regulator-always-on;
+			};
+
+			s_buck8_reg: buck8s {
+				/* GPU */
+				regulator-name = "vdd_g3d_l2";
+				regulator-min-microvolt = <450000>;
+				regulator-max-microvolt = <1300000>;
+				regulator-ramp-delay = <6250>;
+				regulator-always-on;
+			};
+
+			s_ldo1_reg: ldo1s {
+				/* GPU */
+				regulator-name = "vdd_g3d_m";
+				regulator-min-microvolt = <700000>;
+				regulator-max-microvolt = <1300000>;
+				regulator-always-on;
+			};
+
+			s_ldo2_reg: ldo2s {
+				/* UFS/MIPI PLL rail on zumapro */
+				regulator-name = "vdd_ufs_pll";
+				regulator-min-microvolt = <700000>;
+				regulator-max-microvolt = <1300000>;
+				regulator-always-on;
+			};
+
+			s_buck11_reg: buck11s {
+				/* VDD_INT_M on zumapro */
+				regulator-name = "vdd_int_m";
+				regulator-min-microvolt = <450000>;
+				regulator-max-microvolt = <1300000>;
+				regulator-ramp-delay = <6250>;
+				regulator-always-on;
+			};
+		};
+
+		s2mpg15_gpio: gpio {
+			compatible = "samsung,s2mpg15-gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+			ngpios = <10>;
+			gpio-ranges = <&s2mpg15_pinctrl 0 0 10>;
+		};
+
+		s2mpg15_pinctrl: pinctrl {
+		};
+	};
+};
+
+&ext_24_5m {
+	clock-frequency = <24576000>;
+};
+
+&ext_200m {
+	clock-frequency = <200000000>;
+};
+
+&ext_26m {
+	clock-frequency = <26000000>;
+};
+
+&ext_1m {
+	clock-frequency = <1000000>;
+};
+
+&hsi2c_10 {
+	status = "okay";
+
+	eeprom: eeprom@50 {
+		compatible = "atmel,24c08";
+		reg = <0x50>;
+	};
+};
+
+&hsi2c_6 {
+	status = "okay";
+	/* TODO: add the devices once drivers exist */
+
+	max77759tcpc: usb-typec@25 {
+		compatible = "maxim,max77759-tcpci", "maxim,max33359";
+		reg = <0x25>;
+		interrupts-extended = <&gpa8 3 IRQ_TYPE_LEVEL_LOW>;
+		pinctrl-0 = <&typec_int>;
+		pinctrl-names = "default";
+
+		connector {
+			compatible = "usb-c-connector";
+			label = "USB-C";
+			data-role = "dual";
+			power-role = "dual";
+			self-powered;
+			try-power-role = "sink";
+			op-sink-microwatt = <2600000>;
+			slow-charger-loop;
+			/*
+			 * max77759 operating in reverse boost mode (0xA) can
+			 * source up to 1.5A while extboost can only do ~1A.
+			 * Since extboost is the primary path, advertise 900mA.
+			 */
+			source-pdos = <PDO_FIXED(5000, 900,
+						 (PDO_FIXED_SUSPEND
+						  | PDO_FIXED_USB_COMM
+						  | PDO_FIXED_DATA_SWAP
+						  | PDO_FIXED_DUAL_ROLE))>;
+			sink-pdos = <PDO_FIXED(5000, 3000,
+					       (PDO_FIXED_DATA_SWAP
+						| PDO_FIXED_USB_COMM
+						| PDO_FIXED_HIGHER_CAP
+						| PDO_FIXED_DUAL_ROLE))
+				     PDO_FIXED(9000, 2200, 0)
+				     PDO_PPS_APDO(5000, 11000, 3000)>;
+			sink-vdos = <VDO_IDH(1, 1, IDH_PTYPE_PERIPH, 0,
+					     IDH_PTYPE_DFP_HOST, 2, 0x18d1)
+				     VDO_CERT(0x0)
+				     VDO_PRODUCT(0x4ee1, 0x0)
+				     VDO_UFP(UFP_VDO_VER1_2,
+					     (DEV_USB2_CAPABLE
+					      | DEV_USB3_CAPABLE),
+					     UFP_RECEPTACLE, 0,
+					     AMA_VCONN_NOT_REQ, 0,
+					     UFP_ALTMODE_NOT_SUPP,
+					     UFP_USB32_GEN1)
+				     /* padding */ 0
+				     VDO_DFP(DFP_VDO_VER1_1,
+					     (HOST_USB2_CAPABLE
+					      | HOST_USB3_CAPABLE),
+					     DFP_RECEPTACLE, 0)>;
+			sink-vdos-v1 = <VDO_IDH(1, 1, IDH_PTYPE_PERIPH, 0,
+						0, 0, 0x18d1)
+					VDO_CERT(0x0)
+					VDO_PRODUCT(0x4ee1, 0x0)>;
+			/*
+			 * Until bootloader is updated to set those two when
+			 * console is enabled, we disable PD here.
+			 */
+			pd-disable;
+			typec-power-opmode = "default";
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				port@0 {
+					reg = <0>;
+
+					usbc0_orien_sw: endpoint {
+						remote-endpoint = <&usbdrd31_phy_orien_switch>;
+					};
+				};
+
+				port@1 {
+					reg = <1>;
+
+					usbc0_role_sw: endpoint {
+						remote-endpoint = <&usbdrd31_dwc3_role_switch>;
+					};
+				};
+			};
+		};
+	};
+
+	pmic@66 {
+		compatible = "maxim,max77779";
+		reg = <0x66>;
+
+		pinctrl-0 = <&if_pmic_int>;
+		pinctrl-names = "default";
+		interrupts-extended = <&gpa8 0 IRQ_TYPE_LEVEL_LOW>;
+
+		interrupt-controller;
+		#interrupt-cells = <2>;
+
+		gpio {
+			compatible = "maxim,max77779-gpio";
+
+			gpio-controller;
+			#gpio-cells = <2>;
+			/*
+			 * "Human-readable name [SIGNAL_LABEL]" where the
+			 * latter comes from the schematic
+			 */
+			gpio-line-names = "OTG boost [OTG_BOOST_EN]",
+					  "max20339 IRQ [MW_OVP_INT_L]";
+
+			interrupt-controller;
+			#interrupt-cells = <2>;
+		};
+
+		nvmem-0 {
+			compatible = "maxim,max77779-nvmem";
+
+			nvmem-layout {
+				compatible = "fixed-layout";
+				#address-cells = <1>;
+				#size-cells = <1>;
+
+				nvmem_reboot_mode: reboot-mode@0 {
+					reg = <0x0 0x4>;
+				};
+
+				boot-reason@4 {
+					reg = <0x4 0x4>;
+				};
+
+				shutdown-user-flag@8 {
+					reg = <0x8 0x1>;
+				};
+
+				rsoc@a {
+					reg = <0xa 0x2>;
+				};
+			};
+		};
+	};
+};
+
+&pinctrl_gpio_alive {
+	key_voldown: key-voldown-pins {
+		samsung,pins = "gpa4-1";
+		samsung,pin-function = <GS101_PIN_FUNC_EINT>;
+		samsung,pin-pud = <GS101_PIN_PULL_NONE>;
+		samsung,pin-drv = <GS101_PIN_DRV_2_5_MA>;
+	};
+
+	key_volup: key-volup-pins {
+		samsung,pins = "gpa6-2";
+		samsung,pin-function = <GS101_PIN_FUNC_EINT>;
+		samsung,pin-pud = <GS101_PIN_PULL_NONE>;
+		samsung,pin-drv = <GS101_PIN_DRV_2_5_MA>;
+	};
+
+	typec_int: typec-int-pins {
+		samsung,pins = "gpa8-3";
+		samsung,pin-function = <GS101_PIN_FUNC_EINT>;
+		samsung,pin-pud = <GS101_PIN_PULL_UP>;
+		samsung,pin-drv = <GS101_PIN_DRV_2_5_MA>;
+	};
+
+	if_pmic_int: if-pmic-int-pins {
+		samsung,pins = "gpa8-0";
+		samsung,pin-function = <GS101_PIN_FUNC_EINT>;
+		samsung,pin-pud = <GS101_PIN_PULL_UP>;
+		samsung,pin-drv = <GS101_PIN_DRV_2_5_MA>;
+	};
+};
+
+&pinctrl_gpio_alive {
+	key_power: key-power-pins {
+		samsung,pins = "gpa4-0";
+		samsung,pin-function = <GS101_PIN_FUNC_EINT>;
+		samsung,pin-pud = <GS101_PIN_PULL_UP>;
+		samsung,pin-drv = <GS101_PIN_DRV_2_5_MA>;
+	};
+};
+
+&pinctrl_gpio_custom_alive {
+	ts_irq: ts-irq {
+		samsung,pins = "gpn0-0";
+		samsung,pin-function = <GS101_PIN_FUNC_EINT>;
+		samsung,pin-pud = <GS101_PIN_PULL_NONE>;
+		samsung,pin-drv = <GS101_PIN_DRV_2_5_MA>;
+	};
+	// aoc2ap_irq: aoc2ap-irq {
+	// 	samsung,pins = "gpa8-6";
+	// 	samsung,pin-function = <GS101_PIN_FUNC_EINT>;
+	// 	samsung,pin-pud = <GS101_PIN_PULL_DOWN>;
+	// 	samsung,pin-drv = <GS101_PIN_DRV_2_5_MA>;
+	// };
+};
+
+&pinctrl_peric0 {
+	ts_reset: ts-reset {
+		samsung,pins = "gpp1-1";
+		samsung,pin-pud = <GS101_PIN_PULL_NONE>;
+		samsung,pin-con-pdn = <GS101_PIN_PDN_PREV>;
+		samsung,pin-pud-pdn = <GS101_PIN_PULL_NONE>;
+	};
+	// ap2aoc: ap2aoc {
+	// 	samsung,pins = "gpp26-1";
+	// 	samsung,pin-pud = <GS101_PIN_PULL_NONE>;
+	// 	samsung,pin-con-pdn = <GS101_PIN_PDN_PREV>;
+	// 	samsung,pin-pud-pdn = <GS101_PIN_PULL_NONE>;
+	// };
+};
+
+&serial_0 {
+	status = "okay";
+	skip-init;
+	clock-frequency = <24576000>;
+};
+
+&serial_18 {
+	status = "okay";
+};
+
+&gpu {
+	mali-supply = <&s_buck2_reg>;
+	sram-supply = <&s_ldo1_reg>;
+	buck8s-supply = <&s_buck8_reg>;
+	ldo1s-supply = <&s_ldo1_reg>;
+	buck7m-supply = <&s_buck11_reg>;
+};
+
+&ufs_0 {
+	status = "okay";
+	vcc-supply = <&ufs_0_fixed_vcc_reg>;
+	vdd-hba-supply = <&s_ldo2_reg>;
+	vccq-supply = <&s_ldo2_reg>;
+	vccq2-supply = <&m_ldo5_reg>;
+	vcc-max-microamp = <0>;
+	vccq-max-microamp = <0>;
+	vccq2-max-microamp = <0>;
+};
+
+&ufs_0_phy {
+	status = "okay";
+};
+
+&usbdrd31 {
+	vdd10-supply = <&reg_placeholder>;
+	vdd33-supply = <&reg_placeholder>;
+	status = "okay";
+};
+
+&usbdrd31_dwc3 {
+	dr_mode = "otg";
+	usb-role-switch;
+	role-switch-default-mode = "peripheral";
+	maximum-speed = "super-speed-plus";
+	status = "okay";
+
+	port {
+		usbdrd31_dwc3_role_switch: endpoint {
+			remote-endpoint = <&usbc0_role_sw>;
+		};
+	};
+};
+
+&usbdrd31_phy {
+	orientation-switch;
+	/* TODO: Update these once PMIC is implemented */
+	pll-supply = <&reg_placeholder>;
+	dvdd-usb20-supply = <&reg_placeholder>;
+	vddh-usb20-supply = <&reg_placeholder>;
+	vdd33-usb20-supply = <&reg_placeholder>;
+	vdda-usbdp-supply = <&reg_placeholder>;
+	vddh-usbdp-supply = <&reg_placeholder>;
+	status = "okay";
+
+	port {
+		usbdrd31_phy_orien_switch: endpoint {
+			remote-endpoint = <&usbc0_orien_sw>;
+		};
+	};
+};
+
+&usi_uart {
+	samsung,clkreq-on; /* needed for UART mode */
+	status = "okay";
+};
+
+&usi6 {
+	samsung,mode = <USI_MODE_I2C>;
+	status = "okay";
+};
+
+// &usi8 {
+// 	samsung,mode = <USI_MODE_I2C>;
+// 	status = "okay";
+// };
+
+&usi10 {
+	samsung,mode = <USI_MODE_I2C>;
+	status = "okay";
+};
+
+&usi11 {
+	status = "disabled";
+};
+
+&usi12 {
+	status = "disabled";
+};
+
+&usi13 {
+	status = "disabled";
+};
+
+&usi15 {
+	samsung,mode = <USI_MODE_SPI>;
+	status = "okay";
+};
+
+&usi17 {
+	status = "disabled";
+};
+
+&usi18 {
+	samsung,clkreq-on; /* needed for UART mode */
+	status = "okay";
+};
+
+&usi19 {
+	status = "disabled";
+};
+
+&usi20 {
+	samsung,mode = <USI_MODE_SPI>;
+	status = "okay";
+};
+
+&usi21 {
+	samsung,mode = <USI_MODE_SPI>;
+	status = "okay";
+};
+
+&usi22 {
+	samsung,mode = <USI_MODE_SPI>;
+	status = "okay";
+};
+
+&usi23 {
+	samsung,mode = <USI_MODE_SPI>;
+	status = "okay";
+};
+
+&usi24 {
+	samsung,mode = <USI_MODE_SPI>;
+	status = "okay";
+};
+
+&watchdog_cl0 {
+	timeout-sec = <30>;
+	status = "okay";
+};
+
+&spi_15 {
+	status = "okay";
+};
+
+&spi_18 {
+	status = "okay";
+};
+
+&spi_19 {
+	status = "okay";
+};
+
+&spi_21 {
+	status = "okay";
+};
+
+&spi_22 {
+	status = "okay";
+};
+
+/ {
+	fragment@touch_bus_negotiator {
+		target-path = "/";
+		__overlay__ {
+			tbn: tbn {
+				compatible = "touch_bus_negotiator";
+				tbn,mode = <2>;
+			};
+		};
+	};
+};
+
+&spi_20 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi20_bus &spi20_cs>;
+	cs-gpios = <&gpp23 3 GPIO_ACTIVE_LOW>;
+	num-cs = <1>;
+
+	spitouch: touchscreen@0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		status = "ok";
+		reg = <0>;
+		compatible = "synaptics,tcm-spi";
+
+		pinctrl-names = "ts_active", "ts_suspend";
+		pinctrl-0 = <&ts_irq &ts_reset>;
+		pinctrl-1 = <>;
+
+		vdd-supply = <&m_ldo25_reg>;
+		avdd-supply = <&m_ldo4_reg>;
+
+		spi-max-frequency = <1000000>;
+
+		synaptics,avdd-name = "avdd";
+		synaptics,vdd-name = "vdd";
+		synaptics,power-delay-ms = <200>;
+		synaptics,avdd-power-on-delay-ms = <20>;
+		synaptics,vdd-power-on-delay-ms = <20>;
+		synaptics,vdd-power-off-delay-ms = <5>;
+		synaptics,avdd-power-off-delay-ms = <5>;
+		synaptics,irq-gpio = <&gpn0 0 0>;
+		synaptics,irq-on-state = <0>;
+		synaptics,reset-gpio = <&gpp1 1 0>;
+		synaptics,reset-on-state = <0>;
+		synaptics,reset-active-ms = <20>;
+		synaptics,reset-delay-ms = <200>;
+		synaptics,spi-mode = <0>;
+		synaptics,spi-byte-delay-us = <1>;
+		synaptics,spi-block-delay-us = <20>;
+
+		goog,coord-filter-enabled;
+		goog,manual-heatmap-from-irq;
+		goog,tbn-enabled;
+		goog,v4l2-enabled;
+		goog,offload-enabled;
+		goog,lptw-suppress-coords-enabled;
+		goog,reset-after-selftest;
+
+		controller-data {
+			samsung,spi-feedback-delay = <0>;
+		};
+	};
+};
+
+&pcie_0_phy {
+	status = "okay";
+};
+
+&pcie_0 {
+	status = "okay";
+};
+
+&pcie_1_phy {
+	status = "okay";
+};
+
+&pcie_1 {
+	status = "okay";
+
+	ep-device-type = <0x1>;
+	pcie,wlan-gpio = <&gph3 4 0x1>;
+
+	wlan {
+		compatible = "android,bcmdhd_wlan";
+		wl_reg_on = <&gph3 4 0x1>;
+		wl_host_wake = <&gph3 3 0x1>;
+		wl_dev_wake = <&gph3 5 0x1>;
+		ch-num = <0x1>;
+		status = "okay";
+	};
+};
