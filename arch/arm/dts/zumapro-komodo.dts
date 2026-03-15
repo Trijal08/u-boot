@@ -35,6 +35,13 @@
 		clock-frequency = <26000000>;
 	};
 
+	pmu_system_controller: system-controller@15460000 {
+		compatible = "google,gs101-pmu";
+		reg = <0x0 0x15460000 0x10000>;
+		clocks = <&ext_26m>;
+		clock-names = "clkout0";
+	};
+
 	chosen {
 		#address-cells = <2>;
 		#size-cells = <1>;

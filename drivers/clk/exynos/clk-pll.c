@@ -159,7 +159,8 @@ static const struct clk_ops samsung_pll0518x_clk_min_ops = {
 	.get_rate = samsung_pll0518x_recalc_rate,
 };
 
-static struct clk *_samsung_clk_register_pll(void __iomem *base,
+static struct clk *_samsung_clk_register_pll(struct udevice *dev,
+					void __iomem *base,
 					const struct samsung_pll_clock *pll_clk)
 {
 	struct samsung_clk_pll *pll;
@@ -195,7 +196,8 @@ static struct clk *_samsung_clk_register_pll(void __iomem *base,
 		return ERR_PTR(-ENODEV);
 	}
 
-	ret = clk_register(clk, drv_name, pll_clk->name, pll_clk->parent_name);
+	ret = clk_register(clk, drv_name, pll_clk->name,
+			   clk_resolve_parent_clk(dev, pll_clk->parent_name));
 	if (ret) {
 		kfree(pll);
 		return ERR_PTR(ret);
@@ -217,7 +219,7 @@ void samsung_clk_register_pll(struct udevice *dev, void __iomem *base,
 		unsigned long clk_id;
 
 		pll_clk = &clk_list[cnt];
-		clk = _samsung_clk_register_pll(base, pll_clk);
+		clk = _samsung_clk_register_pll(dev, base, pll_clk);
 		clk_id = SAMSUNG_TO_CLK_ID(cmu_id, pll_clk->id);
 		clk_dm(clk_id, clk);
 	}

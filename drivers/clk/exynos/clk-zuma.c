@@ -1441,6 +1441,21 @@ static const struct samsung_cmu_info top_cmu_info  = {
 	.option_offset		= CMU_CMU_TOP_CONTROLLER_OPTION,
 };
 
+static const struct samsung_clk_group top_cmu_clks[] = {
+	{ S_CLK_PLL, cmu_top_pll_clks, ARRAY_SIZE(cmu_top_pll_clks) },
+	{ S_CLK_MUX, cmu_top_mux_clks, 5 },
+	{ S_CLK_FFACTOR, cmu_top_ffactor, ARRAY_SIZE(cmu_top_ffactor) },
+	{ S_CLK_DIV, &cmu_top_div_clks[62], 1 },
+	{ S_CLK_MUX, &cmu_top_mux_clks[5], 13 },
+	{ S_CLK_MUX, &cmu_top_mux_clks[19], 46 },
+	{ S_CLK_MUX, &cmu_top_mux_clks[66], 5 },
+	{ S_CLK_GATE, &cmu_top_gate_clks[9], ARRAY_SIZE(cmu_top_gate_clks) - 9 },
+	{ S_CLK_DIV, cmu_top_div_clks, 61 },
+	{ S_CLK_MUX, &cmu_top_mux_clks[18], 1 },
+	{ S_CLK_MUX, &cmu_top_mux_clks[65], 1 },
+	{ S_CLK_GATE, cmu_top_gate_clks, 9 },
+};
+
 /* ---- CMU_APM ------------------------------------------------------------- */
 
 /* Register Offset definitions for CMU_APM (0x15400000) */
@@ -4502,8 +4517,22 @@ static int zuma_cmu_probe(struct udevice *dev)
 	const struct zuma_cmu_match_data *data =
 		(const struct zuma_cmu_match_data *)dev_get_driver_data(dev);
 	struct zuma_cmu_priv *priv = dev_get_priv(dev);
+	struct clk_bulk clks;
+	int ret;
 
 	priv->cmu_id = data->cmu_id;
+
+	ret = clk_get_bulk(dev, &clks);
+	if (!ret) {
+		ret = clk_enable_bulk(&clks);
+		if (ret)
+			return ret;
+	}
+
+	if (data->cmu_id == CMU_TOP)
+		return samsung_cmu_register_one(dev, data->cmu_id,
+						top_cmu_clks,
+						ARRAY_SIZE(top_cmu_clks));
 
 	return samsung_cmu_register_from_info(dev, data->cmu_id, data->info);
 }

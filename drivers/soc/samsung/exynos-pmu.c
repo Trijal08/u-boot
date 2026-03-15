@@ -89,6 +89,9 @@ static const struct udevice_id exynos_pmu_ids[] = {
 		.compatible = "samsung,exynos7-pmu",
 	},
 	{
+		.compatible = "google,gs101-pmu",
+	},
+	{
 		.compatible = "samsung,exynos850-pmu",
 		.data = (ulong)&exynos850_pmu_data
 	},
