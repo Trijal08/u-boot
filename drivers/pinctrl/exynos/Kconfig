@@ -24,3 +24,11 @@ config PINCTRL_EXYNOS850
 	help
 	  Support pin multiplexing and pin configuration control on
 	  Samsung's Exynos850 SoC.
+
+config PINCTRL_EXYNOS_ZUMA
+	bool "Google Zuma pinctrl driver"
+	depends on ARCH_EXYNOS && PINCTRL_FULL
+	select PINCTRL_EXYNOS
+	help
+	  Support the minimal Google Zuma pinctrl blocks needed for GPIO
+	  and button input on Pixel devices.
