@@ -20,11 +20,6 @@
 #include <serial.h>
 #include <clk.h>
 
-enum {
-	PORT_S5P = 0,
-	PORT_S5L
-};
-
 #define UFCON_FIFO_EN		BIT(0)
 #define UFCON_RX_FIFO_RESET	BIT(1)
 #define UMCON_RESET_VAL		0x0
@@ -48,11 +43,79 @@ enum {
 #define S5P_TX_FIFO_COUNT_MASK	(0xff << S5P_TX_FIFO_COUNT_SHIFT)
 #define S5P_TX_FIFO_FULL	BIT(24)
 
+struct s5p_serial_drv_data {
+	const char *name;
+	u8 debug_reg_width;
+	u8 rx_fifo_count_shift;
+	u8 tx_fifo_count_shift;
+	u32 rx_fifo_count_mask;
+	u32 tx_fifo_count_mask;
+	u32 rx_fifo_full;
+	u32 tx_fifo_full;
+};
+
+static const struct s5p_serial_drv_data exynos4210_serial_drv_data = {
+	.name			= "Exynos4210 UART",
+	.debug_reg_width	= 1,
+	.rx_fifo_count_shift	= S5P_RX_FIFO_COUNT_SHIFT,
+	.tx_fifo_count_shift	= S5P_TX_FIFO_COUNT_SHIFT,
+	.rx_fifo_count_mask	= S5P_RX_FIFO_COUNT_MASK,
+	.tx_fifo_count_mask	= S5P_TX_FIFO_COUNT_MASK,
+	.rx_fifo_full		= S5P_RX_FIFO_FULL,
+	.tx_fifo_full		= S5P_TX_FIFO_FULL,
+};
+
+static const struct s5p_serial_drv_data exynos850_serial_drv_data = {
+	.name			= "Exynos850 UART",
+	.debug_reg_width	= 1,
+	.rx_fifo_count_shift	= S5P_RX_FIFO_COUNT_SHIFT,
+	.tx_fifo_count_shift	= S5P_TX_FIFO_COUNT_SHIFT,
+	.rx_fifo_count_mask	= S5P_RX_FIFO_COUNT_MASK,
+	.tx_fifo_count_mask	= S5P_TX_FIFO_COUNT_MASK,
+	.rx_fifo_full		= S5P_RX_FIFO_FULL,
+	.tx_fifo_full		= S5P_TX_FIFO_FULL,
+};
+
+static const struct s5p_serial_drv_data exynos8895_serial_drv_data = {
+	.name			= "Exynos8895 UART",
+	.debug_reg_width	= 1,
+	.rx_fifo_count_shift	= S5P_RX_FIFO_COUNT_SHIFT,
+	.tx_fifo_count_shift	= S5P_TX_FIFO_COUNT_SHIFT,
+	.rx_fifo_count_mask	= S5P_RX_FIFO_COUNT_MASK,
+	.tx_fifo_count_mask	= S5P_TX_FIFO_COUNT_MASK,
+	.rx_fifo_full		= S5P_RX_FIFO_FULL,
+	.tx_fifo_full		= S5P_TX_FIFO_FULL,
+};
+
+static const struct s5p_serial_drv_data gs101_serial_drv_data = {
+	.name			= "Google GS101 UART",
+	.debug_reg_width	= 4,
+	.rx_fifo_count_shift	= S5P_RX_FIFO_COUNT_SHIFT,
+	.tx_fifo_count_shift	= S5P_TX_FIFO_COUNT_SHIFT,
+	.rx_fifo_count_mask	= S5P_RX_FIFO_COUNT_MASK,
+	.tx_fifo_count_mask	= S5P_TX_FIFO_COUNT_MASK,
+	.rx_fifo_full		= S5P_RX_FIFO_FULL,
+	.tx_fifo_full		= S5P_TX_FIFO_FULL,
+};
+
+static const struct s5p_serial_drv_data s5l_serial_drv_data = {
+	.name			= "Apple S5L UART",
+	.debug_reg_width	= 4,
+	.rx_fifo_count_shift	= S5L_RX_FIFO_COUNT_SHIFT,
+	.tx_fifo_count_shift	= S5L_TX_FIFO_COUNT_SHIFT,
+	.rx_fifo_count_mask	= S5L_RX_FIFO_COUNT_MASK,
+	.tx_fifo_count_mask	= S5L_TX_FIFO_COUNT_MASK,
+	.rx_fifo_full		= S5L_RX_FIFO_FULL,
+	.tx_fifo_full		= S5L_TX_FIFO_FULL,
+};
+
 /* Information about a serial port */
 struct s5p_serial_plat {
 	struct s5p_uart *reg;	/* address of registers in physical memory */
 	u8 reg_width;		/* register width */
 	u8 port_id;		/* uart port number */
+	bool skip_init;
+	const struct s5p_serial_drv_data *drv_data;
 	u8 rx_fifo_count_shift;
 	u8 tx_fifo_count_shift;
 	u32 rx_fifo_count_mask;
@@ -124,17 +187,25 @@ int s5p_serial_setbrg(struct udevice *dev, int baudrate)
 	struct s5p_uart *const uart = plat->reg;
 	u32 uclk;
 
+	if (plat->skip_init)
+		return 0;
+
 #if IS_ENABLED(CONFIG_CLK_EXYNOS) || IS_ENABLED(CONFIG_ARCH_APPLE)
 	struct clk clk;
 	int ret;
 
 	ret = clk_get_by_index(dev, 1, &clk);
 	if (ret < 0)
-		return ret;
-	uclk = clk_get_rate(&clk);
+		uclk = dev_read_u32_default(dev, "clock-frequency", 0);
+	else
+		uclk = clk_get_rate(&clk);
 #else
 	uclk = get_uart_clk(plat->port_id);
 #endif
+	if (!uclk)
+		uclk = dev_read_u32_default(dev, "clock-frequency", 0);
+	if (!uclk)
+		return -EINVAL;
 
 	s5p_serial_baud(uart, plat->reg_width, uclk, baudrate);
 
@@ -146,7 +217,8 @@ static int s5p_serial_probe(struct udevice *dev)
 	struct s5p_serial_plat *plat = dev_get_plat(dev);
 	struct s5p_uart *const uart = plat->reg;
 
-	s5p_serial_init(uart);
+	if (!plat->skip_init)
+		s5p_serial_init(uart);
 
 	return 0;
 }
@@ -220,7 +292,8 @@ static int s5p_serial_pending(struct udevice *dev, bool input)
 static int s5p_serial_of_to_plat(struct udevice *dev)
 {
 	struct s5p_serial_plat *plat = dev_get_plat(dev);
-	const ulong port_type = dev_get_driver_data(dev);
+	const struct s5p_serial_drv_data *drv_data =
+		(const struct s5p_serial_drv_data *)dev_get_driver_data(dev);
 
 	plat->reg = dev_read_addr_ptr(dev);
 	if (!plat->reg)
@@ -228,22 +301,14 @@ static int s5p_serial_of_to_plat(struct udevice *dev)
 
 	plat->reg_width = dev_read_u32_default(dev, "reg-io-width", 1);
 	plat->port_id = dev_read_u8_default(dev, "id", dev_seq(dev));
-
-	if (port_type == PORT_S5L) {
-		plat->rx_fifo_count_shift = S5L_RX_FIFO_COUNT_SHIFT;
-		plat->rx_fifo_count_mask = S5L_RX_FIFO_COUNT_MASK;
-		plat->rx_fifo_full = S5L_RX_FIFO_FULL;
-		plat->tx_fifo_count_shift = S5L_TX_FIFO_COUNT_SHIFT;
-		plat->tx_fifo_count_mask = S5L_TX_FIFO_COUNT_MASK;
-		plat->tx_fifo_full = S5L_TX_FIFO_FULL;
-	} else {
-		plat->rx_fifo_count_shift = S5P_RX_FIFO_COUNT_SHIFT;
-		plat->rx_fifo_count_mask = S5P_RX_FIFO_COUNT_MASK;
-		plat->rx_fifo_full = S5P_RX_FIFO_FULL;
-		plat->tx_fifo_count_shift = S5P_TX_FIFO_COUNT_SHIFT;
-		plat->tx_fifo_count_mask = S5P_TX_FIFO_COUNT_MASK;
-		plat->tx_fifo_full = S5P_TX_FIFO_FULL;
-	}
+	plat->skip_init = dev_read_bool(dev, "skip-init");
+	plat->drv_data = drv_data;
+	plat->rx_fifo_count_shift = drv_data->rx_fifo_count_shift;
+	plat->rx_fifo_count_mask = drv_data->rx_fifo_count_mask;
+	plat->rx_fifo_full = drv_data->rx_fifo_full;
+	plat->tx_fifo_count_shift = drv_data->tx_fifo_count_shift;
+	plat->tx_fifo_count_mask = drv_data->tx_fifo_count_mask;
+	plat->tx_fifo_full = drv_data->tx_fifo_full;
 
 	return 0;
 }
@@ -256,10 +321,18 @@ static const struct dm_serial_ops s5p_serial_ops = {
 };
 
 static const struct udevice_id s5p_serial_ids[] = {
-	{ .compatible = "samsung,exynos4210-uart",	.data = PORT_S5P },
-	{ .compatible = "samsung,exynos850-uart",	.data = PORT_S5P },
-	{ .compatible = "samsung,exynos8895-uart",	.data = PORT_S5P },
-	{ .compatible = "apple,s5l-uart",		.data = PORT_S5L },
+	{ .compatible = "google,zuma-uart",
+	  .data = (ulong)&gs101_serial_drv_data },
+	{ .compatible = "google,gs101-uart",
+	  .data = (ulong)&gs101_serial_drv_data },
+	{ .compatible = "samsung,exynos4210-uart",
+	  .data = (ulong)&exynos4210_serial_drv_data },
+	{ .compatible = "samsung,exynos850-uart",
+	  .data = (ulong)&exynos850_serial_drv_data },
+	{ .compatible = "samsung,exynos8895-uart",
+	  .data = (ulong)&exynos8895_serial_drv_data },
+	{ .compatible = "apple,s5l-uart",
+	  .data = (ulong)&s5l_serial_drv_data },
 	{ }
 };
 
@@ -278,34 +351,41 @@ U_BOOT_DRIVER(serial_s5p) = {
 
 #include <debug_uart.h>
 
+static inline const struct s5p_serial_drv_data *s5p_debug_uart_drv_data(void)
+{
+	if (IS_ENABLED(CONFIG_ARCH_APPLE))
+		return &s5l_serial_drv_data;
+	if (IS_ENABLED(CONFIG_ARM64) && IS_ENABLED(CONFIG_ARCH_EXYNOS))
+		return &gs101_serial_drv_data;
+
+	return &exynos4210_serial_drv_data;
+}
+
 static inline void _debug_uart_init(void)
 {
+	const struct s5p_serial_drv_data *drv_data = s5p_debug_uart_drv_data();
+
 	if (IS_ENABLED(CONFIG_DEBUG_UART_SKIP_INIT))
 		return;
 
 	struct s5p_uart *uart = (struct s5p_uart *)CONFIG_VAL(DEBUG_UART_BASE);
 
 	s5p_serial_init(uart);
-#if IS_ENABLED(CONFIG_ARCH_APPLE)
-	s5p_serial_baud(uart, 4, CONFIG_DEBUG_UART_CLOCK, CONFIG_BAUDRATE);
-#else
-	s5p_serial_baud(uart, 1, CONFIG_DEBUG_UART_CLOCK, CONFIG_BAUDRATE);
-#endif
+	s5p_serial_baud(uart, drv_data->debug_reg_width,
+			CONFIG_DEBUG_UART_CLOCK, CONFIG_BAUDRATE);
 }
 
 static inline void _debug_uart_putc(int ch)
 {
+	const struct s5p_serial_drv_data *drv_data = s5p_debug_uart_drv_data();
 	struct s5p_uart *uart = (struct s5p_uart *)CONFIG_VAL(DEBUG_UART_BASE);
 
-#if IS_ENABLED(CONFIG_ARCH_APPLE)
-	while (readl(&uart->ufstat) & S5L_TX_FIFO_FULL)
+	while (readl(&uart->ufstat) & drv_data->tx_fifo_full)
 		;
-	writel(ch, &uart->utxh);
-#else
-	while (readl(&uart->ufstat) & S5P_TX_FIFO_FULL)
-		;
-	writeb(ch, &uart->utxh);
-#endif
+	if (drv_data->debug_reg_width == 4)
+		writel(ch, &uart->utxh);
+	else
+		writeb(ch, &uart->utxh);
 }
 
 DEBUG_UART_FUNCS
