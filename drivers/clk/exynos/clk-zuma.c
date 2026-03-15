@@ -16,7 +16,7 @@
 #define CLKS_NR_TOP	(CLK_GOUT_CMU_TPU_UART + 1)
 #define CLKS_NR_APM	(CLK_APM_PLL_DIV16_APM + 1)
 #define CLKS_NR_DPU	(CLK_MOUT_DPU_DSIM_USER + 1)
-#define CLKS_NR_HSI0	(CLK_GOUT_HSI0_CLK_HSI0_USI2_USI_CLK + 1)
+#define CLKS_NR_HSI0	(CLK_DOUT_DIV_CLK_HSI0_EUSB + 1)
 #define CLKS_NR_HSI2	(CLK_GOUT_HSI2_XIU_P_HSI2_ACLK + 1)
 #define CLKS_NR_MISC	(CLK_GOUT_MISC_XIU_D_MISC_ACLK + 1)
 #define CLKS_NR_PERIC0	(CLK_GOUT_PERIC0_SYSREG_PERIC0_PCLK + 1)
@@ -2338,6 +2338,16 @@ static const struct samsung_div_clock hsi0_div_clks[]  = {
 	    CLK_CON_DIV_DIV_CLK_HSI0_USI2, 0, 4),
 };
 
+static const struct samsung_fixed_factor_clock hsi0_ffactor_clks[] __initconst = {
+	/*
+	 * Zuma downstream does not expose a dedicated eUSB divider. Provide an
+	 * exynos2200-compatible clock ID backed by the HSI0 NOC path so the
+	 * eUSB2 PHY binding can use the upstream clock tuple.
+	 */
+	FFACTOR(CLK_DOUT_DIV_CLK_HSI0_EUSB, "dout_div_clk_hsi0_eusb",
+		"mout_hsi0_noc", 1, 1, 0),
+};
+
 static const struct samsung_gate_clock hsi0_gate_clks[]  = {
 	/* TODO: should have a driver for this */
 	GATE(CLK_GOUT_HSI0_PCLK,
@@ -2523,6 +2533,8 @@ static const struct samsung_cmu_info hsi0_cmu_info  = {
 	.nr_div_clks		= ARRAY_SIZE(hsi0_div_clks),
 	.gate_clks		= hsi0_gate_clks,
 	.nr_gate_clks		= ARRAY_SIZE(hsi0_gate_clks),
+	.fixed_factor_clks	= hsi0_ffactor_clks,
+	.nr_fixed_factor_clks	= ARRAY_SIZE(hsi0_ffactor_clks),
 	.fixed_clks		= hsi0_fixed_clks,
 	.nr_fixed_clks		= ARRAY_SIZE(hsi0_fixed_clks),
 	.nr_clk_ids		= CLKS_NR_HSI0,
