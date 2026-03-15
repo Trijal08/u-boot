@@ -134,6 +134,7 @@ struct exynos_ufs {
 static int zuma_ufs_drv_init(struct exynos_ufs *ufs);
 static int zuma_ufs_pre_link(struct exynos_ufs *ufs);
 static int zuma_ufs_post_link(struct exynos_ufs *ufs);
+static int exynos_ufs_device_reset(struct ufs_hba *hba);
 
 static const struct exynos_ufs_uic_attr gs101_uic_attr = {
 	.tx_trailingclks	= 0xff,
@@ -385,36 +386,20 @@ static int zuma_ufs_pre_link(struct exynos_ufs *ufs)
 
 static int zuma_ufs_post_link(struct exynos_ufs *ufs)
 {
-	int ret;
-
-	ret = samsung_ufs_phy_calibrate_stage(&ufs->phy, CFG_POST_INIT);
-	if (ret)
-		return ret;
-
 	hci_writel(ufs, WLU_EN | WLU_BURST_LEN(3), HCI_AXIDMA_RWDATA_BURST_LEN);
 	ufshcd_dme_set(ufs->hba, UIC_ARG_MIB(PA_SAVECONFIGTIME), 0x3e8);
 
 	return 0;
 }
 
-static int exynos_ufs_hce_enable_notify(struct ufs_hba *hba,
-					enum ufs_notify_change_status status)
+static int exynos_ufs_host_reset(struct exynos_ufs *ufs)
 {
-	struct exynos_ufs *ufs = dev_get_priv(hba->dev);
 	u32 val, saved_misc;
 	unsigned long timeout;
 
-	if (status == POST_CHANGE) {
-		exynos_ufs_auto_ctrl_hcc(ufs, true);
-		return 0;
-	}
-
 	exynos_ufs_disable_auto_ctrl_hcc_save(ufs, &saved_misc);
-	hci_writel(ufs, 0, HCI_GPIO_OUT);
-	udelay(5);
-	hci_writel(ufs, 1, HCI_GPIO_OUT);
-
 	hci_writel(ufs, UFS_SW_RST_MASK, HCI_SW_RST);
+
 	timeout = timer_get_us() + 1000;
 	do {
 		val = hci_readl(ufs, HCI_SW_RST);
@@ -424,9 +409,38 @@ static int exynos_ufs_hce_enable_notify(struct ufs_hba *hba,
 		}
 	} while (timer_get_us() < timeout);
 
-	dev_err(hba->dev, "ufs host reset timeout\n");
 	exynos_ufs_auto_ctrl_hcc_restore(ufs, &saved_misc);
 	return -ETIMEDOUT;
+}
+
+static int exynos_ufs_hce_enable_notify(struct ufs_hba *hba,
+					enum ufs_notify_change_status status)
+{
+	struct exynos_ufs *ufs = dev_get_priv(hba->dev);
+	int ret;
+
+	if (status == POST_CHANGE) {
+		exynos_ufs_auto_ctrl_hcc(ufs, true);
+		return 0;
+	}
+
+	ret = exynos_ufs_host_reset(ufs);
+	if (ret) {
+		dev_err(hba->dev, "ufs host reset timeout\n");
+		return ret;
+	}
+
+	/*
+	 * Linux pulses the device reset GPIO again here, after the host SW
+	 * reset and immediately before HCE proceeds. Keep that ordering: the
+	 * earlier core-level device_reset() call is not the only reset pulse
+	 * the Exynos flow relies on.
+	 */
+	ret = exynos_ufs_device_reset(hba);
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
 static int exynos_ufs_link_startup_notify(struct ufs_hba *hba,
@@ -489,7 +503,13 @@ static int exynos_ufs_device_reset(struct ufs_hba *hba)
 	hci_writel(ufs, 0, HCI_GPIO_OUT);
 	udelay(10);
 	hci_writel(ufs, 1, HCI_GPIO_OUT);
-	udelay(10);
+	/*
+	 * Give the device time to come out of reset before the HBA starts
+	 * talking to it. U-Boot's UFS core issues the reset immediately
+	 * before HCE enable / link bring-up, so a short post-deassert delay
+	 * here is the safest place to mirror what working UFS drivers do.
+	 */
+	mdelay(10);
 
 	return 0;
 }
