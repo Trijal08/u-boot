@@ -6,6 +6,7 @@
 obj-$(CONFIG_UFS) += ufs-uclass.o
 obj-$(CONFIG_UFS_AMD_VERSAL2) += ufs-amd-versal2.o ufshcd-dwc.o
 obj-$(CONFIG_UFS_CADENCE) += cdns-platform.o
+obj-$(CONFIG_UFS_EXYNOS) += ufs-exynos.o
 obj-$(CONFIG_UFS_MEDIATEK) += ufs-mediatek.o
 obj-$(CONFIG_UFS_PCI) += ufs-pci.o
 obj-$(CONFIG_UFS_QCOM) += ufs-qcom.o

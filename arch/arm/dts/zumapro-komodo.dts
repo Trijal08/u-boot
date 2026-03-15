@@ -35,6 +35,13 @@
 		clock-frequency = <26000000>;
 	};
 
+	pmu_system_controller: system-controller@15460000 {
+		compatible = "google,gs101-pmu";
+		reg = <0x0 0x15460000 0x10000>;
+		clocks = <&ext_26m>;
+		clock-names = "clkout0";
+	};
+
 	chosen {
 		#address-cells = <2>;
 		#size-cells = <1>;
@@ -275,6 +282,41 @@
 		compatible = "google,gs101-hsi2-sysreg", "syscon";
 		reg = <0x0 0x13020000 0x10000>;
 		clocks = <&cmu_hsi2 CLK_GOUT_HSI2_SYSREG_HSI2_PCLK>;
+	};
+
+	ufs_0: ufs@13200000 {
+		compatible = "google,zuma-ufs", "google,gs101-ufs";
+		reg = <0x0 0x13200000 0x200>,
+		      <0x0 0x13201100 0x2000>,
+		      <0x0 0x13280000 0x8000>,
+		      <0x0 0x132a0000 0xa014>;
+		reg-names = "hci", "vs_hci", "unipro", "ufsp";
+		clocks = <&cmu_hsi2 CLK_GOUT_HSI2_UFS_EMBD_I_ACLK>,
+			 <&cmu_hsi2 CLK_GOUT_HSI2_UFS_EMBD_I_CLK_UNIPRO>,
+			 <&cmu_hsi2 CLK_GOUT_HSI2_UFS_EMBD_I_FMP_CLK>,
+			 <&cmu_hsi2 CLK_GOUT_HSI2_QE_UFS_EMBD_HSI2_ACLK>,
+			 <&cmu_hsi2 CLK_GOUT_HSI2_QE_UFS_EMBD_HSI2_PCLK>,
+			 <&cmu_hsi2 CLK_GOUT_HSI2_SYSREG_HSI2_PCLK>;
+		clock-names = "core_clk", "sclk_unipro_main", "fmp",
+			      "aclk", "pclk", "sysreg";
+		dma-coherent;
+		freq-table-hz = <0 0>, <0 0>, <0 0>, <0 0>, <0 0>, <0 0>;
+		phys = <&ufs_0_phy>;
+		phy-names = "ufs-phy";
+		samsung,sysreg = <&sysreg_hsi2 0x710>;
+		google,iocc-offset = <0x710>;
+		status = "okay";
+	};
+
+	ufs_0_phy: phy@13204000 {
+		compatible = "google,zuma-ufs-phy", "google,gs101-ufs-phy";
+		reg = <0x0 0x13204000 0x4000>;
+		reg-names = "phy-pma";
+		samsung,pmu-syscon = <&pmu_system_controller>;
+		#phy-cells = <0>;
+		clocks = <&ext_24_5m>;
+		clock-names = "ref_clk";
+		status = "okay";
 	};
 
 	cmu_apm: clock-controller@15400000 {

@@ -292,6 +292,14 @@ config PHY_MTK_UFS
 	  initialization, power on and power off flow of
 	  specified M-PHYs.
 
+config PHY_SAMSUNG_UFS
+	bool "Samsung/Google UFS PHY driver"
+	depends on PHY && ARCH_EXYNOS
+	select REGMAP
+	select SYSCON
+	help
+	  Support for the GS101/Zuma UFS PHY.
+
 config PHY_NPCM_USB
 	bool "Nuvoton NPCM USB PHY support"
 	depends on PHY

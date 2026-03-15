@@ -23,6 +23,14 @@ config UFS_CADENCE
 	  This selects the platform driver for the Cadence UFS host
 	  controller present on present TI's J721e devices.
 
+config UFS_EXYNOS
+	bool "Samsung/Google Exynos UFS controller driver"
+	depends on UFS && ARCH_EXYNOS
+	select PHY_SAMSUNG_UFS
+	help
+	  This selects the Samsung/Google specific additions to the UFS host
+	  controller used on GS101/Zuma.
+
 config UFS_MEDIATEK
 	tristate "MediaTek UFS Host Controller Driver"
 	depends on UFS && ARCH_MEDIATEK

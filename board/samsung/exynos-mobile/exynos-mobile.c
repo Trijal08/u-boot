@@ -30,6 +30,8 @@ DECLARE_GLOBAL_DATA_PTR;
 #define ZUMAPRO_WDT_CL1_BASE			0x10070000
 #define ZUMAPRO_WDT_WTCON			0x00
 #define ZUMAPRO_WDT_DISABLE_MASK		((1 << 5) | (1 << 2))
+#define ZUMAPRO_SIMPLEFB_BASE			0xfac00000
+#define ZUMAPRO_SIMPLEFB_SIZE			SZ_16M
 
 #define lmb_alloc(size, addr) \
 	lmb_alloc_mem(LMB_MEM_ALLOC_ANY, SZ_2M, addr, size, LMB_NONE)
@@ -52,7 +54,7 @@ struct efi_capsule_update_info update_info = {
  * peripheral block, and a sentinel at the end. This is filled in
  * dynamically.
  */
-static struct mm_region exynos_mem_map[CONFIG_NR_DRAM_BANKS + 2] = {
+static struct mm_region exynos_mem_map[CONFIG_NR_DRAM_BANKS + 4] = {
 	{
 		/* Peripheral MMIO block */
 		.virt = 0x10000000UL,
@@ -61,15 +63,56 @@ static struct mm_region exynos_mem_map[CONFIG_NR_DRAM_BANKS + 2] = {
 		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
 			 PTE_BLOCK_NON_SHARE | PTE_BLOCK_PXN | PTE_BLOCK_UXN,
 	},
+	{
+		/* Additional MMIO block for top-level CMU and related registers */
+		.virt = 0x20000000UL,
+		.phys = 0x20000000UL,
+		.size = 0x10000000UL,
+		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
+			 PTE_BLOCK_NON_SHARE | PTE_BLOCK_PXN | PTE_BLOCK_UXN,
+	},
+	{
+		/* Live simplefb scanout buffer left by earlier boot stages */
+		.virt = ZUMAPRO_SIMPLEFB_BASE,
+		.phys = ZUMAPRO_SIMPLEFB_BASE,
+		.size = ZUMAPRO_SIMPLEFB_SIZE,
+		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
+			 PTE_BLOCK_INNER_SHARE,
+	},
 };
 
 struct mm_region *mem_map = exynos_mem_map;
 
+#define EXYNOS_STATIC_MAP_COUNT 3
+
+static bool exynos_addr_in_dram(phys_addr_t addr, ulong size)
+{
+	int i;
+
+	for (i = 0; i < CONFIG_NR_DRAM_BANKS; i++) {
+		phys_addr_t start = gd->bd->bi_dram[i].start;
+		phys_size_t len = gd->bd->bi_dram[i].size;
+
+		if (!len)
+			continue;
+		if (addr >= start && addr + size <= start + len)
+			return true;
+	}
+
+	return false;
+}
+
 static const char *exynos_prev_bl_get_bootargs(void)
 {
-	void *prev_bl_fdt_base = (void *)get_prev_bl_fdt_addr();
+	phys_addr_t prev_bl_fdt_addr = get_prev_bl_fdt_addr();
+	void *prev_bl_fdt_base = (void *)prev_bl_fdt_addr;
 	int chosen_node_offset, ret;
 	const struct fdt_property *bootargs_prop;
+
+	if (!prev_bl_fdt_addr ||
+	    !IS_ALIGNED(prev_bl_fdt_addr, 8) ||
+	    !exynos_addr_in_dram(prev_bl_fdt_addr, SZ_4K))
+		return NULL;
 
 	ret = fdt_check_header(prev_bl_fdt_base);
 	if (ret < 0) {
@@ -100,7 +143,7 @@ static void exynos_parse_dram_banks(const void *fdt_base)
 {
 	u64 mem_addr, mem_size = 0;
 	u32 na, ns, i;
-	int index = 1;
+	int index = EXYNOS_STATIC_MAP_COUNT;
 	int offset;
 
 	if (fdt_check_header(fdt_base) < 0)
@@ -377,9 +420,9 @@ int dram_init(void)
 
 	/* Select the largest RAM bank for U-Boot. */
 	for (i = 0; i < CONFIG_NR_DRAM_BANKS; i++) {
-		if (gd->ram_size < mem_map[i + 1].size) {
-			gd->ram_base = mem_map[i + 1].phys;
-			gd->ram_size = mem_map[i + 1].size;
+		if (gd->ram_size < mem_map[i + EXYNOS_STATIC_MAP_COUNT].size) {
+			gd->ram_base = mem_map[i + EXYNOS_STATIC_MAP_COUNT].phys;
+			gd->ram_size = mem_map[i + EXYNOS_STATIC_MAP_COUNT].size;
 		}
 	}
 
@@ -391,8 +434,8 @@ int dram_init_banksize(void)
 	unsigned int i;
 
 	for (i = 0; i < CONFIG_NR_DRAM_BANKS; i++) {
-		gd->bd->bi_dram[i].start = mem_map[i + 1].phys;
-		gd->bd->bi_dram[i].size = mem_map[i + 1].size;
+		gd->bd->bi_dram[i].start = mem_map[i + EXYNOS_STATIC_MAP_COUNT].phys;
+		gd->bd->bi_dram[i].size = mem_map[i + EXYNOS_STATIC_MAP_COUNT].size;
 	}
 
 	return 0;
