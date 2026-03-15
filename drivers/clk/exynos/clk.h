@@ -242,8 +242,10 @@ struct samsung_pll_clock {
 	const char		*name;
 	const char		*parent_name;
 	unsigned long		flags;
+	int			lock_offset;
 	int			con_offset;
 	enum samsung_pll_type	type;
+	const struct samsung_pll_rate_table *rate_table;
 };
 
 #define PLL(_typ, _id, _name, _pname, _con)		\
@@ -252,8 +254,22 @@ struct samsung_pll_clock {
 		.name		= _name,		\
 		.parent_name	= _pname,		\
 		.flags		= CLK_GET_RATE_NOCACHE,	\
+		.lock_offset	= 0,			\
 		.con_offset	= _con,			\
 		.type		= _typ,			\
+		.rate_table	= NULL,			\
+	}
+
+#define PLL_FULL(_typ, _id, _name, _pname, _lock, _con, _rtable)	\
+	{								\
+		.id		= _id,					\
+		.name		= _name,				\
+		.parent_name	= _pname,				\
+		.flags		= CLK_GET_RATE_NOCACHE,			\
+		.lock_offset	= _lock,				\
+		.con_offset	= _con,					\
+		.type		= _typ,					\
+		.rate_table	= _rtable,				\
 	}
 
 enum samsung_clock_type {
@@ -277,9 +293,44 @@ struct samsung_clk_group {
 	unsigned int nr_clk;
 };
 
+struct samsung_clk_reg_dump {
+	u32 offset;
+	u32 value;
+};
+
+struct samsung_cmu_info {
+	const struct samsung_pll_clock *pll_clks;
+	unsigned int nr_pll_clks;
+	const struct samsung_mux_clock *mux_clks;
+	unsigned int nr_mux_clks;
+	const struct samsung_div_clock *div_clks;
+	unsigned int nr_div_clks;
+	const struct samsung_fixed_rate_clock *fixed_clks;
+	unsigned int nr_fixed_clks;
+	const struct samsung_fixed_factor_clock *fixed_factor_clks;
+	unsigned int nr_fixed_factor_clks;
+	const struct samsung_gate_clock *gate_clks;
+	unsigned int nr_gate_clks;
+	unsigned int nr_clk_ids;
+	const unsigned long *clk_regs;
+	unsigned int nr_clk_regs;
+	bool auto_clock_gate;
+	unsigned int gate_dbg_offset;
+	unsigned int option_offset;
+	unsigned int drcg_offset;
+	unsigned int memclk_offset;
+	const unsigned long *sysreg_clk_regs;
+	unsigned int nr_sysreg_clk_regs;
+	const struct samsung_clk_reg_dump *suspend_regs;
+	unsigned int nr_suspend_regs;
+	const char *clk_name;
+};
+
 int samsung_cmu_register_one(struct udevice *dev, unsigned int cmu_id,
 			     const struct samsung_clk_group *clk_groups,
 			     unsigned int nr_groups);
+int samsung_cmu_register_from_info(struct udevice *dev, unsigned int cmu_id,
+				   const struct samsung_cmu_info *info);
 
 /**
  * samsung_register_cmu - Register CMU clocks ensuring parent CMU is present
