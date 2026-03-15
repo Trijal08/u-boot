@@ -20,6 +20,8 @@
 
 #define UBOOT_DM_CLK_SAMSUNG_PLL0822X	"samsung_clk_pll0822x"
 #define UBOOT_DM_CLK_SAMSUNG_PLL0831X	"samsung_clk_pll0831x"
+#define UBOOT_DM_CLK_SAMSUNG_PLL0517X	"samsung_clk_pll0517x"
+#define UBOOT_DM_CLK_SAMSUNG_PLL0518X	"samsung_clk_pll0518x"
 
 struct samsung_clk_pll {
 	struct clk		clk;
@@ -98,6 +100,65 @@ static const struct clk_ops samsung_pll0831x_clk_min_ops = {
 	.get_rate = samsung_pll0831x_recalc_rate,
 };
 
+/*
+ * PLL0517x / PLL0518x clock type
+ */
+
+#define PLL051X_MDIV_MASK		0x3ff
+#define PLL051X_PDIV_MASK		0x3f
+#define PLL051X_SDIV_MASK		0x7
+#define PLL051X_KDIV_MASK		0xffff
+#define PLL051X_MDIV_SHIFT		16
+#define PLL051X_PDIV_SHIFT		8
+#define PLL051X_SDIV_SHIFT		0
+#define PLL051X_KDIV_SHIFT		0
+
+static unsigned long samsung_pll0517x_recalc_rate(struct clk *clk)
+{
+	struct samsung_clk_pll *pll = to_clk_pll(clk);
+	u32 mdiv, pdiv, sdiv, pll_con3;
+	u64 fvco = clk_get_parent_rate(clk);
+
+	pll_con3 = readl_relaxed(pll->con_reg);
+	mdiv = (pll_con3 >> PLL051X_MDIV_SHIFT) & PLL051X_MDIV_MASK;
+	pdiv = (pll_con3 >> PLL051X_PDIV_SHIFT) & PLL051X_PDIV_MASK;
+	sdiv = (pll_con3 >> PLL051X_SDIV_SHIFT) & PLL051X_SDIV_MASK;
+
+	fvco *= mdiv;
+	do_div(fvco, (pdiv << sdiv));
+
+	return (unsigned long)fvco;
+}
+
+static unsigned long samsung_pll0518x_recalc_rate(struct clk *clk)
+{
+	struct samsung_clk_pll *pll = to_clk_pll(clk);
+	u32 mdiv, pdiv, sdiv, pll_con3, pll_con5;
+	s16 kdiv;
+	u64 fvco = clk_get_parent_rate(clk);
+
+	pll_con3 = readl_relaxed(pll->con_reg);
+	pll_con5 = readl_relaxed(pll->con_reg + 8);
+	mdiv = (pll_con3 >> PLL051X_MDIV_SHIFT) & PLL051X_MDIV_MASK;
+	pdiv = (pll_con3 >> PLL051X_PDIV_SHIFT) & PLL051X_PDIV_MASK;
+	sdiv = (pll_con3 >> PLL051X_SDIV_SHIFT) & PLL051X_SDIV_MASK;
+	kdiv = (s16)((pll_con5 >> PLL051X_KDIV_SHIFT) & PLL051X_KDIV_MASK);
+
+	fvco *= (mdiv << 16) + kdiv;
+	do_div(fvco, (pdiv << sdiv));
+	fvco >>= 16;
+
+	return (unsigned long)fvco;
+}
+
+static const struct clk_ops samsung_pll0517x_clk_min_ops = {
+	.get_rate = samsung_pll0517x_recalc_rate,
+};
+
+static const struct clk_ops samsung_pll0518x_clk_min_ops = {
+	.get_rate = samsung_pll0518x_recalc_rate,
+};
+
 static struct clk *_samsung_clk_register_pll(void __iomem *base,
 					const struct samsung_pll_clock *pll_clk)
 {
@@ -122,6 +183,12 @@ static struct clk *_samsung_clk_register_pll(void __iomem *base,
 		break;
 	case pll_0831x:
 		drv_name = UBOOT_DM_CLK_SAMSUNG_PLL0831X;
+		break;
+	case pll_0517x:
+		drv_name = UBOOT_DM_CLK_SAMSUNG_PLL0517X;
+		break;
+	case pll_0518x:
+		drv_name = UBOOT_DM_CLK_SAMSUNG_PLL0518X;
 		break;
 	default:
 		kfree(pll);
@@ -167,5 +234,19 @@ U_BOOT_DRIVER(samsung_pll0831x_clk) = {
 	.name	= UBOOT_DM_CLK_SAMSUNG_PLL0831X,
 	.id	= UCLASS_CLK,
 	.ops	= &samsung_pll0831x_clk_min_ops,
+	.flags	= DM_FLAG_PRE_RELOC,
+};
+
+U_BOOT_DRIVER(samsung_pll0517x_clk) = {
+	.name	= UBOOT_DM_CLK_SAMSUNG_PLL0517X,
+	.id	= UCLASS_CLK,
+	.ops	= &samsung_pll0517x_clk_min_ops,
+	.flags	= DM_FLAG_PRE_RELOC,
+};
+
+U_BOOT_DRIVER(samsung_pll0518x_clk) = {
+	.name	= UBOOT_DM_CLK_SAMSUNG_PLL0518X,
+	.id	= UCLASS_CLK,
+	.ops	= &samsung_pll0518x_clk_min_ops,
 	.flags	= DM_FLAG_PRE_RELOC,
 };

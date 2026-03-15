@@ -21,7 +21,29 @@ enum samsung_pll_type {
 	pll_0822x,
 	pll_0831x,
 	pll_1417x,
+	pll_0517x,
+	pll_0518x,
 };
+
+struct samsung_pll_rate_table {
+	unsigned int rate;
+	unsigned int pdiv;
+	unsigned int mdiv;
+	unsigned int sdiv;
+	unsigned int kdiv;
+	unsigned int afc;
+	unsigned int mfr;
+	unsigned int mrr;
+	unsigned int vsel;
+};
+
+#define PLL_35XX_RATE(_fin, _rate, _m, _p, _s)		\
+	{						\
+		.rate	= (_rate),			\
+		.mdiv	= (_m),				\
+		.pdiv	= (_p),				\
+		.sdiv	= (_s),				\
+	}
 
 void samsung_clk_register_pll(struct udevice *dev, void __iomem *base,
 			      unsigned int cmu_id,

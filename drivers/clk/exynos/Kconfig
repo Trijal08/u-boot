@@ -29,4 +29,11 @@ config CLK_EXYNOS850
 	  This enables common clock driver support for platforms based
 	  on Samsung Exynos850 SoC.
 
+config CLK_EXYNOS_ZUMA
+	bool "Clock driver for Google Zuma SoCs"
+	select CLK_CCF
+	help
+	  This enables common clock driver support for platforms based
+	  on Google Zuma / Zumapro SoCs.
+
 endmenu

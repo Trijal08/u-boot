@@ -189,3 +189,40 @@ int samsung_cmu_register_one(struct udevice *dev, unsigned int cmu_id,
 
 	return 0;
 }
+
+int samsung_cmu_register_from_info(struct udevice *dev, unsigned int cmu_id,
+				   const struct samsung_cmu_info *info)
+{
+	void __iomem *base;
+
+	base = dev_read_addr_ptr(dev);
+	if (!base)
+		return -EINVAL;
+
+	if (info->fixed_clks)
+		samsung_clk_register_fixed_rate(dev, base, cmu_id,
+						info->fixed_clks,
+						info->nr_fixed_clks);
+	if (info->pll_clks)
+		samsung_clk_register_pll(dev, base, cmu_id,
+					 info->pll_clks,
+					 info->nr_pll_clks);
+	if (info->mux_clks)
+		samsung_clk_register_mux(dev, base, cmu_id,
+					 info->mux_clks,
+					 info->nr_mux_clks);
+	if (info->div_clks)
+		samsung_clk_register_div(dev, base, cmu_id,
+					 info->div_clks,
+					 info->nr_div_clks);
+	if (info->fixed_factor_clks)
+		samsung_clk_register_fixed_factor(dev, base, cmu_id,
+						  info->fixed_factor_clks,
+						  info->nr_fixed_factor_clks);
+	if (info->gate_clks)
+		samsung_clk_register_gate(dev, base, cmu_id,
+					  info->gate_clks,
+					  info->nr_gate_clks);
+
+	return 0;
+}

@@ -5,6 +5,7 @@
 
 /dts-v1/;
 
+#include <dt-bindings/clock/google,zuma.h>
 #include <dt-bindings/gpio/gpio.h>
 #include <linux/input.h>
 
@@ -18,6 +19,20 @@
 		pinctrl0 = &pinctrl_gpio_alive;
 		pinctrl1 = &pinctrl_gpio_custom_alive;
 		serial0 = &uart0;
+	};
+
+	ext_24_5m: clock-1 {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-output-names = "oscclk";
+		clock-frequency = <24576000>;
+	};
+
+	ext_26m: clock-3 {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-output-names = "ext-26m";
+		clock-frequency = <26000000>;
 	};
 
 	chosen {
@@ -81,8 +96,11 @@
 	};
 
 	uart0: uart@10870000 {
-		compatible = "google,zuma-uart", "google,gs101-uart";
-		reg = <0x0 0x10870000 0x100>;
+		compatible = "google,gs101-uart";
+		reg = <0x0 0x10870000 0xc0>;
+		clocks = <&cmu_peric0 CLK_GOUT_PERIC0_PERIC0_TOP1_PCLK_0>,
+			 <&cmu_peric0 CLK_GOUT_PERIC0_PERIC0_TOP1_IPCLK_0>;
+		clock-names = "uart", "clk_uart_baud0";
 		reg-io-width = <4>;
 		clock-frequency = <24576000>;
 		skip-init;
@@ -116,6 +134,8 @@
 	pinctrl_gpio_alive: pinctrl@154d0000 {
 		compatible = "google,zuma-pinctrl";
 		reg = <0x0 0x154d0000 0x1000>;
+		clocks = <&cmu_apm CLK_GOUT_APM_APBIF_GPIO_ALIVE_PCLK>;
+		clock-names = "pclk";
 
 		gpa0: gpa0-gpio-bank { gpio-controller; #gpio-cells = <2>; };
 		gpa1: gpa1-gpio-bank { gpio-controller; #gpio-cells = <2>; };
@@ -153,6 +173,8 @@
 	pinctrl_gpio_custom_alive: pinctrl@15060000 {
 		compatible = "google,zuma-pinctrl";
 		reg = <0x0 0x15060000 0x1000>;
+		clocks = <&cmu_apm CLK_GOUT_APM_APBIF_GPIO_ALIVE_PCLK>;
+		clock-names = "pclk";
 
 		gpn0: gpn0-gpio-bank { gpio-controller; #gpio-cells = <2>; };
 		gpn1: gpn1-gpio-bank { gpio-controller; #gpio-cells = <2>; };
@@ -164,5 +186,133 @@
 		gpn7: gpn7-gpio-bank { gpio-controller; #gpio-cells = <2>; };
 		gpn8: gpn8-gpio-bank { gpio-controller; #gpio-cells = <2>; };
 		gpn9: gpn9-gpio-bank { gpio-controller; #gpio-cells = <2>; };
+	};
+
+	cmu_misc: clock-controller@10010000 {
+		compatible = "google,zuma-cmu-misc";
+		reg = <0x0 0x10010000 0x10000>;
+		#clock-cells = <1>;
+		clocks = <&cmu_top CLK_DOUT_CMU_MISC_BUS>,
+			 <&cmu_top CLK_DOUT_CMU_MISC_SSS>;
+		clock-names = "bus", "sss";
+		samsung,sysreg = <&sysreg_misc>;
+	};
+
+	sysreg_misc: syscon@10030000 {
+		compatible = "google,gs101-misc-sysreg", "syscon";
+		reg = <0x0 0x10030000 0x10000>;
+		clocks = <&cmu_misc CLK_GOUT_MISC_SYSREG_MISC_PCLK>;
+	};
+
+	cmu_peric0: clock-controller@10800000 {
+		compatible = "google,zuma-cmu-peric0";
+		reg = <0x0 0x10800000 0x10000>;
+		#clock-cells = <1>;
+		clocks = <&ext_24_5m>,
+			 <&cmu_top CLK_DOUT_CMU_PERIC0_BUS>,
+			 <&cmu_top CLK_DOUT_CMU_PERIC0_IP>;
+		clock-names = "oscclk", "bus", "ip";
+		samsung,sysreg = <&sysreg_peric0>;
+	};
+
+	sysreg_peric0: syscon@10820000 {
+		compatible = "google,gs101-peric0-sysreg", "syscon";
+		reg = <0x0 0x10820000 0x10000>;
+		clocks = <&cmu_peric0 CLK_GOUT_PERIC0_SYSREG_PERIC0_PCLK>;
+	};
+
+	cmu_peric1: clock-controller@10c00000 {
+		compatible = "google,zuma-cmu-peric1";
+		reg = <0x0 0x10c00000 0x10000>;
+		#clock-cells = <1>;
+		clocks = <&ext_24_5m>,
+			 <&cmu_top CLK_DOUT_CMU_PERIC1_BUS>,
+			 <&cmu_top CLK_DOUT_CMU_PERIC1_IP>;
+		clock-names = "oscclk", "bus", "ip";
+		samsung,sysreg = <&sysreg_peric1>;
+	};
+
+	sysreg_peric1: syscon@10c20000 {
+		compatible = "google,gs101-peric1-sysreg", "syscon";
+		reg = <0x0 0x10c20000 0x10000>;
+		clocks = <&cmu_peric1 CLK_GOUT_PERIC1_SYSREG_PERIC1_PCLK>;
+	};
+
+	cmu_hsi0: clock-controller@11000000 {
+		compatible = "google,zuma-cmu-hsi0";
+		reg = <0x0 0x11000000 0x10000>;
+		#clock-cells = <1>;
+		clocks = <&ext_24_5m>,
+			 <&cmu_top CLK_DOUT_CMU_HSI0_BUS>,
+			 <&cmu_top CLK_DOUT_CMU_HSI0_DPGTC>,
+			 <&cmu_top CLK_DOUT_CMU_HSI0_USB31DRD>,
+			 <&cmu_top CLK_DOUT_CMU_HSI0_USBDPDBG>;
+		clock-names = "oscclk", "bus", "dpgtc", "usb31drd",
+			      "usbdpdbg";
+		samsung,sysreg = <&sysreg_hsi0>;
+	};
+
+	sysreg_hsi0: syscon@11020000 {
+		compatible = "google,gs101-hsi0-sysreg", "syscon";
+		reg = <0x0 0x11020000 0x10000>;
+		clocks = <&cmu_hsi0 CLK_GOUT_HSI0_SYSREG_HSI0_PCLK>;
+	};
+
+	cmu_hsi2: clock-controller@13000000 {
+		compatible = "google,zuma-cmu-hsi2";
+		reg = <0x0 0x13000000 0x10000>;
+		#clock-cells = <1>;
+		clocks = <&ext_24_5m>,
+			 <&cmu_top CLK_DOUT_CMU_HSI2_BUS>,
+			 <&cmu_top CLK_DOUT_CMU_HSI2_PCIE>,
+			 <&cmu_top CLK_DOUT_CMU_HSI2_UFS_EMBD>,
+			 <&cmu_top CLK_DOUT_CMU_HSI2_MMC_CARD>;
+		clock-names = "oscclk", "bus", "pcie", "ufs", "mmc";
+		samsung,sysreg = <&sysreg_hsi2>;
+	};
+
+	sysreg_hsi2: syscon@13020000 {
+		compatible = "google,gs101-hsi2-sysreg", "syscon";
+		reg = <0x0 0x13020000 0x10000>;
+		clocks = <&cmu_hsi2 CLK_GOUT_HSI2_SYSREG_HSI2_PCLK>;
+	};
+
+	cmu_apm: clock-controller@15400000 {
+		compatible = "google,zuma-cmu-apm";
+		reg = <0x0 0x15400000 0x10000>;
+		#clock-cells = <1>;
+		clocks = <&ext_24_5m>;
+		clock-names = "oscclk";
+		samsung,sysreg = <&sysreg_apm>;
+	};
+
+	sysreg_apm: syscon@15420000 {
+		compatible = "google,zuma-apm-sysreg", "syscon";
+		reg = <0x0 0x15420000 0x10000>;
+	};
+
+	cmu_dpu: clock-controller@19400000 {
+		compatible = "google,zuma-cmu-dpu";
+		reg = <0x0 0x19400000 0x10000>;
+		#clock-cells = <1>;
+		clocks = <&ext_26m>,
+			 <&cmu_top CLK_DOUT_CMU_DPU_BUS>,
+			 <&cmu_top CLK_DOUT_CMU_SHARED0_DIV4>;
+		clock-names = "oscclk", "bus", "dsim";
+		samsung,sysreg = <&sysreg_dpu>;
+	};
+
+	sysreg_dpu: syscon@19420000 {
+		compatible = "google,gs101-dpu-sysreg", "syscon";
+		reg = <0x0 0x19420000 0x10000>;
+		clocks = <&cmu_dpu CLK_GOUT_DPU_SYSREG_DPU_PCLK>;
+	};
+
+	cmu_top: clock-controller@26040000 {
+		compatible = "google,zuma-cmu-top";
+		reg = <0x0 0x26040000 0x10000>;
+		#clock-cells = <1>;
+		clocks = <&ext_24_5m>;
+		clock-names = "oscclk";
 	};
 };
