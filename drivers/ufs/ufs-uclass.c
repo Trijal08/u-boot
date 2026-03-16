@@ -12,12 +12,16 @@
 #include <charset.h>
 #include <clk.h>
 #include <dm.h>
+#include <dm/root.h>
+#include <addr_map.h>
 #include <log.h>
 #include <dm/device_compat.h>
 #include <dm/devres.h>
 #include <dm/lists.h>
 #include <dm/device-internal.h>
+#include <lmb.h>
 #include <malloc.h>
+#include <mapmem.h>
 #include <hexdump.h>
 #include <scsi.h>
 #include <ufs.h>
@@ -64,6 +68,51 @@
 static inline bool ufshcd_is_hba_active(struct ufs_hba *hba);
 static inline void ufshcd_hba_stop(struct ufs_hba *hba);
 static int ufshcd_hba_enable(struct ufs_hba *hba);
+
+#define UFS_DMA_32BIT_LIMIT	0x100000000ULL
+
+static void *ufshcd_alloc_lowmem(struct ufs_hba *hba, size_t size, ulong align)
+{
+	struct bd_info *bd = gd->bd;
+	phys_addr_t addr = 0;
+	int i;
+
+	for (i = 0; i < CONFIG_NR_DRAM_BANKS; i++) {
+		phys_addr_t start = bd->bi_dram[i].start;
+		phys_size_t bank_size = bd->bi_dram[i].size;
+		phys_addr_t end;
+
+		if (!bank_size || start >= UFS_DMA_32BIT_LIMIT)
+			continue;
+
+		end = min_t(phys_addr_t, start + bank_size, UFS_DMA_32BIT_LIMIT);
+		if (end <= start || end - start < size)
+			continue;
+
+		addr = end;
+		if (!lmb_alloc_mem(LMB_MEM_ALLOC_MAX, align, &addr, size, LMB_NONE))
+			return map_sysmem(addr, size);
+	}
+
+	dev_err(hba->dev, "unable to allocate %zu bytes of UFS DMA memory below 4GiB\n",
+		size);
+
+	return NULL;
+}
+
+static dma_addr_t ufshcd_dma_addr(const void *ptr)
+{
+#ifdef CONFIG_ADDR_MAP
+	phys_addr_t phys = addrmap_virt_to_phys((void *)ptr);
+
+	if (phys == (phys_addr_t)~0)
+		phys = map_to_sysmem(ptr);
+
+	return (dma_addr_t)phys;
+#else
+	return (dma_addr_t)map_to_sysmem(ptr);
+#endif
+}
 
 /*
  * ufshcd_wait_for_register - wait for register value to change
@@ -462,6 +511,8 @@ static void ufshcd_enable_intr(struct ufs_hba *hba, u32 intrs)
 static int ufshcd_make_hba_operational(struct ufs_hba *hba)
 {
 	int err = 0;
+	dma_addr_t utrdl_dma_addr = ufshcd_dma_addr(hba->utrdl);
+	dma_addr_t utmrdl_dma_addr = ufshcd_dma_addr(hba->utmrdl);
 	u32 reg;
 
 	/* Enable required interrupts */
@@ -471,13 +522,13 @@ static int ufshcd_make_hba_operational(struct ufs_hba *hba)
 	ufshcd_disable_intr_aggr(hba);
 
 	/* Configure UTRL and UTMRL base address registers */
-	ufshcd_writel(hba, lower_32_bits((dma_addr_t)hba->utrdl),
+	ufshcd_writel(hba, lower_32_bits(utrdl_dma_addr),
 		      REG_UTP_TRANSFER_REQ_LIST_BASE_L);
-	ufshcd_writel(hba, upper_32_bits((dma_addr_t)hba->utrdl),
+	ufshcd_writel(hba, upper_32_bits(utrdl_dma_addr),
 		      REG_UTP_TRANSFER_REQ_LIST_BASE_H);
-	ufshcd_writel(hba, lower_32_bits((dma_addr_t)hba->utmrdl),
+	ufshcd_writel(hba, lower_32_bits(utmrdl_dma_addr),
 		      REG_UTP_TASK_REQ_LIST_BASE_L);
-	ufshcd_writel(hba, upper_32_bits((dma_addr_t)hba->utmrdl),
+	ufshcd_writel(hba, upper_32_bits(utmrdl_dma_addr),
 		      REG_UTP_TASK_REQ_LIST_BASE_H);
 
 	/*
@@ -652,7 +703,7 @@ static void ufshcd_host_memory_configure(struct ufs_hba *hba)
 	u16 prdt_offset;
 
 	utrdlp = hba->utrdl;
-	cmd_desc_dma_addr = (dma_addr_t)hba->ucdl;
+	cmd_desc_dma_addr = ufshcd_dma_addr(hba->ucdl);
 
 	utrdlp->command_desc_base_addr_lo =
 				cpu_to_le32(lower_32_bits(cmd_desc_dma_addr));
@@ -678,12 +729,17 @@ static void ufshcd_host_memory_configure(struct ufs_hba *hba)
  */
 static int ufshcd_memory_alloc(struct ufs_hba *hba)
 {
+	size_t size;
+
 	/* Allocate one Transfer Request Descriptor
 	 * Should be aligned to 1k boundary.
 	 */
-	hba->utrdl = memalign(1024,
-			      ALIGN(sizeof(struct utp_transfer_req_desc),
-				    ARCH_DMA_MINALIGN));
+	size = ALIGN(sizeof(struct utp_transfer_req_desc), ARCH_DMA_MINALIGN);
+	if (hba->quirks & UFSHCD_QUIRK_BROKEN_64BIT_ADDRESS) {
+		hba->utrdl = ufshcd_alloc_lowmem(hba, size, 1024);
+	} else {
+		hba->utrdl = memalign(1024, size);
+	}
 	if (!hba->utrdl) {
 		dev_err(hba->dev, "Transfer Descriptor memory allocation failed\n");
 		return -ENOMEM;
@@ -692,18 +748,24 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 	/* Allocate one Command Descriptor
 	 * Should be aligned to 1k boundary.
 	 */
-	hba->ucdl = memalign(1024,
-			     ALIGN(sizeof(struct utp_transfer_cmd_desc),
-				   ARCH_DMA_MINALIGN));
+	size = ALIGN(sizeof(struct utp_transfer_cmd_desc), ARCH_DMA_MINALIGN);
+	if (hba->quirks & UFSHCD_QUIRK_BROKEN_64BIT_ADDRESS) {
+		hba->ucdl = ufshcd_alloc_lowmem(hba, size, 1024);
+	} else {
+		hba->ucdl = memalign(1024, size);
+	}
 	if (!hba->ucdl) {
 		dev_err(hba->dev, "Command descriptor memory allocation failed\n");
 		return -ENOMEM;
 	}
 
 	/* Allocate one Task Management Request Descriptor. */
-	hba->utmrdl = memalign(1024,
-			       ALIGN(sizeof(struct utp_task_req_desc),
-				     ARCH_DMA_MINALIGN));
+	size = ALIGN(sizeof(struct utp_task_req_desc), ARCH_DMA_MINALIGN);
+	if (hba->quirks & UFSHCD_QUIRK_BROKEN_64BIT_ADDRESS) {
+		hba->utmrdl = ufshcd_alloc_lowmem(hba, size, 1024);
+	} else {
+		hba->utmrdl = memalign(1024, size);
+	}
 	if (!hba->utmrdl) {
 		dev_err(hba->dev,
 			"Task management descriptor memory allocation failed\n");
@@ -937,8 +999,21 @@ static int ufshcd_send_command(struct ufs_hba *hba, unsigned int task_tag)
 		if (hba->max_pwr_info.info.pwr_rx != SLOWAUTO_MODE &&
 		    hba->max_pwr_info.info.pwr_tx != SLOWAUTO_MODE) {
 			if (get_timer(start) > QUERY_REQ_TIMEOUT) {
+				struct utp_transfer_req_desc *req_desc = hba->utrdl;
+
 				dev_err(hba->dev,
-					"Timedout waiting for UTP response\n");
+					"Timedout waiting for UTP response: is=%08x db=%08x cs=%08x ocs=%08x utrd=%pad ucd=%pad utmrd=%pad utrlrs=%08x utmrlrs=%08x utrlba=%08x/%08x utmrlba=%08x/%08x\n",
+					intr_status,
+					ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_DOOR_BELL),
+					ufshcd_readl(hba, REG_CONTROLLER_STATUS),
+					le32_to_cpu(req_desc->header.dword_2),
+					&hba->utrdl, &hba->ucdl, &hba->utmrdl,
+					ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_LIST_RUN_STOP),
+					ufshcd_readl(hba, REG_UTP_TASK_REQ_LIST_RUN_STOP),
+					ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_LIST_BASE_L),
+					ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_LIST_BASE_H),
+					ufshcd_readl(hba, REG_UTP_TASK_REQ_LIST_BASE_L),
+					ufshcd_readl(hba, REG_UTP_TASK_REQ_LIST_BASE_H));
 				return -ETIMEDOUT;
 			}
 		}

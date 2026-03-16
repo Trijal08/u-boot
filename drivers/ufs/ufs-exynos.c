@@ -145,7 +145,8 @@ static const struct exynos_ufs_uic_attr gs101_uic_attr = {
 };
 
 static const struct exynos_ufs_drv_data zuma_ufs_drv_data = {
-	.quirks		= UFSHCI_QUIRK_SKIP_MANUAL_WB_FLUSH_CTRL |
+	.quirks		= UFSHCD_QUIRK_BROKEN_64BIT_ADDRESS |
+			  UFSHCI_QUIRK_SKIP_MANUAL_WB_FLUSH_CTRL |
 			  UFSHCD_QUIRK_SKIP_DEF_UNIPRO_TIMEOUT_SETTING,
 	.iocc_mask	= UFS_GS101_SHARABLE,
 	.uic_attr	= &gs101_uic_attr,
