@@ -153,6 +153,15 @@ static int exynos_usi_configure(struct udevice *dev)
 	if (ret)
 		return ret;
 
+	/*
+	 * Some firmware configurations leave the USI wrapper inaccessible while
+	 * the UART block itself remains usable. In that case touching USI_CON /
+	 * USI_OPTION aborts the whole boot, so leave UART mode to the child
+	 * serial driver and only program the sysreg mux here.
+	 */
+	if (usi->mode == USI_V2_UART)
+		return 0;
+
 	if (usi->data->ver == USI_VER2)
 		exynos_usi_enable(usi);
 
