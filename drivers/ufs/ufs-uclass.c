@@ -700,6 +700,23 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 		return -ENOMEM;
 	}
 
+	/* Allocate one Task Management Request Descriptor. */
+	hba->utmrdl = memalign(1024,
+			       ALIGN(sizeof(struct utp_task_req_desc),
+				     ARCH_DMA_MINALIGN));
+	if (!hba->utmrdl) {
+		dev_err(hba->dev,
+			"Task management descriptor memory allocation failed\n");
+		return -ENOMEM;
+	}
+
+	memset(hba->utrdl, 0, ALIGN(sizeof(struct utp_transfer_req_desc),
+				    ARCH_DMA_MINALIGN));
+	memset(hba->ucdl, 0, ALIGN(sizeof(struct utp_transfer_cmd_desc),
+				   ARCH_DMA_MINALIGN));
+	memset(hba->utmrdl, 0, ALIGN(sizeof(struct utp_task_req_desc),
+				     ARCH_DMA_MINALIGN));
+
 	return 0;
 }
 

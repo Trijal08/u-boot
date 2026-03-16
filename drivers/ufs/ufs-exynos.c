@@ -386,8 +386,15 @@ static int zuma_ufs_pre_link(struct exynos_ufs *ufs)
 
 static int zuma_ufs_post_link(struct exynos_ufs *ufs)
 {
+	u32 nutrs, nutmrs;
+
 	hci_writel(ufs, WLU_EN | WLU_BURST_LEN(3), HCI_AXIDMA_RWDATA_BURST_LEN);
 	ufshcd_dme_set(ufs->hba, UIC_ARG_MIB(PA_SAVECONFIGTIME), 0x3e8);
+
+	nutrs = (ufs->hba->capabilities & MASK_TRANSFER_REQUESTS_SLOTS_SDB) + 1;
+	nutmrs = ((ufs->hba->capabilities & MASK_TASK_MANAGEMENT_REQUEST_SLOTS) >> 16) + 1;
+	hci_writel(ufs, BIT(nutrs) - 1, HCI_UTRL_NEXUS_TYPE);
+	hci_writel(ufs, BIT(nutmrs) - 1, HCI_UTMRL_NEXUS_TYPE);
 
 	return 0;
 }
@@ -486,8 +493,6 @@ static int exynos_ufs_link_startup_notify(struct ufs_hba *hba,
 	hci_writel(ufs, 0xa, HCI_DATA_REORDER);
 	hci_writel(ufs, 12, HCI_TXPRDT_ENTRY_SIZE);
 	hci_writel(ufs, 12, HCI_RXPRDT_ENTRY_SIZE);
-	hci_writel(ufs, 0xffffffff, HCI_UTRL_NEXUS_TYPE);
-	hci_writel(ufs, 0xff, HCI_UTMRL_NEXUS_TYPE);
 	ret = ufs->drv_data->post_link ? ufs->drv_data->post_link(ufs) : 0;
 	if (ret)
 		return ret;
