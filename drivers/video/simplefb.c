@@ -15,13 +15,26 @@ static int simple_video_probe(struct udevice *dev)
 	struct video_uc_plat *plat = dev_get_uclass_plat(dev);
 	struct video_priv *uc_priv = dev_get_uclass_priv(dev);
 	ofnode node = dev_ofnode(dev);
+	ofnode mem;
 	const char *format;
 	int ret;
 	fdt_addr_t base;
 	fdt_size_t size;
 	u32 width, height, stride, rot;
 
-	base = dev_read_addr_size(dev, &size);
+	mem = ofnode_parse_phandle(node, "memory-region", 0);
+	if (ofnode_valid(mem)) {
+		base = ofnode_get_addr_size_index(mem, 0, &size);
+		if (base != FDT_ADDR_T_NONE && dev_read_bool(dev, "reg"))
+			log_warning("%s: preferring \"memory-region\" over \"reg\" property\n",
+				    __func__);
+	} else {
+		base = FDT_ADDR_T_NONE;
+	}
+
+	if (base == FDT_ADDR_T_NONE)
+		base = dev_read_addr_size(dev, &size);
+
 	if (base == FDT_ADDR_T_NONE) {
 		debug("%s: Failed to decode memory region\n", __func__);
 		return -EINVAL;
