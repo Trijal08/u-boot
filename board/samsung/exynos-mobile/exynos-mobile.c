@@ -54,7 +54,7 @@ struct efi_capsule_update_info update_info = {
  * peripheral block, and a sentinel at the end. This is filled in
  * dynamically.
  */
-static struct mm_region exynos_mem_map[CONFIG_NR_DRAM_BANKS + 4] = {
+static struct mm_region exynos_mem_map[CONFIG_NR_DRAM_BANKS + 5] = {
 	{
 		/* Peripheral MMIO block */
 		.virt = 0x10000000UL,
@@ -72,6 +72,13 @@ static struct mm_region exynos_mem_map[CONFIG_NR_DRAM_BANKS + 4] = {
 			 PTE_BLOCK_NON_SHARE | PTE_BLOCK_PXN | PTE_BLOCK_UXN,
 	},
 	{
+		.virt = 0xa0000000UL,
+		.phys = 0xa0000000UL,
+		.size = 0x10000000UL,
+		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
+			 PTE_BLOCK_INNER_SHARE,
+	},
+	{
 		/* Live simplefb scanout buffer left by earlier boot stages */
 		.virt = ZUMAPRO_SIMPLEFB_BASE,
 		.phys = ZUMAPRO_SIMPLEFB_BASE,
@@ -83,7 +90,7 @@ static struct mm_region exynos_mem_map[CONFIG_NR_DRAM_BANKS + 4] = {
 
 struct mm_region *mem_map = exynos_mem_map;
 
-#define EXYNOS_STATIC_MAP_COUNT 3
+#define EXYNOS_STATIC_MAP_COUNT 4
 
 static bool exynos_addr_in_dram(phys_addr_t addr, ulong size)
 {
