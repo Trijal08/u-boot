@@ -6,11 +6,20 @@
  */
 
 #include <dm.h>
+#include <linux/clk-provider.h>
 
 #include <dt-bindings/clock/google,zuma.h>
 
 #include "clk.h"
 #include "clk-pll.h"
+
+/*
+ * Rate of the external oscillator ("oscclk", XTCXO) that feeds every PLL in the
+ * SoC. The mainline device tree models it as a fixed-clock node with no
+ * "clock-frequency" property, so U-Boot cannot derive a rate from it; register
+ * it explicitly at the known XTAL frequency instead (see zuma_cmu_probe()).
+ */
+#define ZUMA_OSCCLK_RATE	24576000
 
 /* NOTE: Must be equal to the last clock ID increased by one */
 #define CLKS_NR_TOP	(CLK_GOUT_CMU_TPU_UART + 1)
@@ -4541,10 +4550,28 @@ static int zuma_cmu_probe(struct udevice *dev)
 			return ret;
 	}
 
-	if (data->cmu_id == CMU_TOP)
+	if (data->cmu_id == CMU_TOP) {
+		struct clk *oscclk;
+
+		/*
+		 * Register the oscillator before any CMU_TOP clocks, since all
+		 * PLLs are parented to "oscclk" by name. U-Boot's CCF resolves
+		 * parents via the clock device name, and the DT oscillator node
+		 * neither carries that name nor a "clock-frequency", so the
+		 * "oscclk" parent would otherwise be unresolved and the whole
+		 * tree would resolve to 0 Hz. CMU_TOP always probes first (every
+		 * other CMU takes its input from it), so doing this here makes
+		 * "oscclk" available to all CMUs.
+		 */
+		oscclk = clk_register_fixed_rate(NULL, "oscclk",
+						 ZUMA_OSCCLK_RATE);
+		if (IS_ERR(oscclk))
+			return PTR_ERR(oscclk);
+
 		return samsung_cmu_register_one(dev, data->cmu_id,
 						top_cmu_clks,
 						ARRAY_SIZE(top_cmu_clks));
+	}
 
 	return samsung_cmu_register_from_info(dev, data->cmu_id, data->info);
 }

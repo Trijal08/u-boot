@@ -510,6 +510,7 @@
 };
 
 &serial_0 {
+	clock-frequency = <24576000>;
 	status = "okay";
 };
 
