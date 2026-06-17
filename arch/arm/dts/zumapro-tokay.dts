@@ -31,16 +31,6 @@
 	status = "okay";
 };
 
-&drmdsim0 {
-	status = "okay";
-	samsung,burst-clock-frequency = <756000000>;
-	samsung,pll-pmsk = <0x2 0xf6 0x3 0x1800>;
-};
-
-&drmdecon0 {
-	status = "okay";
-};
-
 &spitouch {
 	st,dchip_id = /bits/ 8 <0x36 0x48>;
 	st,max-coords = <1079 2399>;
