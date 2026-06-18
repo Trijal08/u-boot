@@ -20,7 +20,7 @@ static int simple_video_probe(struct udevice *dev)
 	int ret;
 	fdt_addr_t base;
 	fdt_size_t size;
-	u32 width, height, stride, rot;
+	u32 width, height, stride, rot = 0;
 
 	mem = ofnode_parse_phandle(node, "memory-region", 0);
 	if (ofnode_valid(mem)) {
