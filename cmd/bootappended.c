@@ -55,31 +55,48 @@ static inline u32 be32_at(const u8 *p)
 }
 
 /*
- * Sanity-check an FDT header so a stray 0xd00dfeed inside a kernel or
- * compressed blob is not mistaken for the appended device tree.
+ * Validate an FDT header so a stray 0xd00dfeed inside a kernel or
+ * compressed blob is not mistaken for the appended device tree. This
+ * mirrors libfdt's fdt_check_header() consistency checks but reads the
+ * fields byte-wise: the appended tree sits at an arbitrary (usually
+ * unaligned) offset after the kernel, and fdt_check_header() rejects any
+ * blob that is not 8-byte aligned, so it cannot be used here.
  */
 static bool fdt_looks_valid(const u8 *q)
 {
-	u32 tsize = be32_at(q + 4);
-	u32 ver = be32_at(q + 20);
-	u32 lver = be32_at(q + 24);
+	u32 totalsize	 = be32_at(q + 4);
+	u32 off_struct	 = be32_at(q + 8);
+	u32 off_strings	 = be32_at(q + 12);
+	u32 off_rsvmap	 = be32_at(q + 16);
+	u32 version	 = be32_at(q + 20);
+	u32 comp_version = be32_at(q + 24);
+	u32 size_strings = be32_at(q + 32);
+	u32 size_struct	 = be32_at(q + 36);
 
 	if (be32_at(q) != FDT_MAGIC)
 		return false;
-	if (tsize < 0x100 || tsize > (64 << 20))
+	if (version < 16 || version > 17 || comp_version != 16)
 		return false;
-	if (ver < 16 || ver > 17 || lver < 16 || lver > 17)
+	if (totalsize < 0x40 || totalsize > (64u << 20))
+		return false;
+	if (off_rsvmap < 0x28 || off_rsvmap > totalsize)
+		return false;
+	if (off_struct < 0x28 || off_struct > totalsize ||
+	    size_struct > totalsize || off_struct + size_struct > totalsize)
+		return false;
+	if (off_strings < 0x28 || off_strings > totalsize ||
+	    size_strings > totalsize || off_strings + size_strings > totalsize)
 		return false;
 
 	return true;
 }
 
 /*
- * Scan [start, start + len) on 4-byte boundaries for a valid FDT header.
- * The appended device tree is concatenated (unpadded) after the kernel
- * file, whose true file size cannot be derived from the arm64 Image
- * header (its image_size is the effective in-memory size, not the file
- * length), so we locate the tree by its signature instead.
+ * Scan [start, start + len) byte-by-byte for a valid FDT header. The
+ * appended device tree is concatenated (unpadded) after the kernel,
+ * whose true size cannot be derived from the arm64 Image header, and
+ * after a compressed kernel it ends at an arbitrary byte offset, so the
+ * tree's magic is generally not aligned and the scan must step by 1.
  */
 static ulong scan_for_fdt(ulong start, ulong len)
 {
@@ -87,7 +104,7 @@ static ulong scan_for_fdt(ulong start, ulong len)
 	const u8 *base = p;
 	ulong off, found = 0;
 
-	for (off = 0; off + 0x28 <= len; off += 4) {
+	for (off = 0; off + 0x28 <= len; off++) {
 		if (fdt_looks_valid(base + off)) {
 			found = start + off;
 			break;
@@ -96,59 +113,6 @@ static ulong scan_for_fdt(ulong start, ulong len)
 	unmap_sysmem(p);
 
 	return found;
-}
-
-static ulong hex8(const u8 *s)
-{
-	ulong v = 0;
-	int i;
-
-	for (i = 0; i < 8; i++) {
-		u8 c = s[i];
-
-		v <<= 4;
-		if (c >= '0' && c <= '9')
-			v |= c - '0';
-		else if (c >= 'a' && c <= 'f')
-			v |= c - 'a' + 10;
-		else if (c >= 'A' && c <= 'F')
-			v |= c - 'A' + 10;
-	}
-
-	return v;
-}
-
-/*
- * Walk a 'newc' cpio archive (uncompressed initramfs) to its TRAILER!!!
- * entry and return the total byte size, so a raw appended ramdisk can be
- * sized automatically. Returns 0 if it is not a newc cpio.
- */
-static ulong cpio_newc_size(ulong addr, ulong max)
-{
-	void *p = map_sysmem(addr, max);
-	const u8 *b = p;
-	ulong off = 0, total = 0;
-
-	while (off + 110 <= max) {
-		ulong fsize, nsize, namelen;
-
-		if (memcmp(b + off, "070701", 6) && memcmp(b + off, "070702", 6))
-			break;
-		fsize = hex8(b + off + 54);
-		nsize = hex8(b + off + 94);
-		namelen = nsize;
-		if (off + 110 + namelen > max)
-			break;
-		if (nsize == 11 && !memcmp(b + off + 110, "TRAILER!!!", 10)) {
-			total = ALIGN(off + 110 + nsize, 4);
-			break;
-		}
-		off += ALIGN(110 + nsize, 4);
-		off += ALIGN(fsize, 4);
-	}
-	unmap_sysmem(p);
-
-	return total;
 }
 
 /*
@@ -324,9 +288,39 @@ static int do_bootappended(struct cmd_tbl *cmdtp, int flag, int argc,
 		} else {
 			dtb_blob = scan_for_fdt(payload, scan_end - payload);
 			if (dtb_blob) {
-				snprintf(fdtbuf, sizeof(fdtbuf), "0x%lx", dtb_blob);
+				u8 dh[8];
+				ulong ts, adtb;
+
+				p = map_sysmem(dtb_blob, sizeof(dh));
+				memcpy(dh, p, sizeof(dh));
+				unmap_sysmem(p);
+				ts = be32_at(dh + 4);
+				rd = dtb_blob + ts;	/* ramdisk starts after the dtb */
+
+				/*
+				 * libfdt (here and inside booti) rejects any blob
+				 * that is not 8-byte aligned. The appended tree is
+				 * at an arbitrary offset after the kernel, so nudge
+				 * it down in place onto the now-consumed kernel tail
+				 * to 8-byte align it. rd (above) keeps the original
+				 * location so the ramdisk math stays correct.
+				 */
+				adtb = dtb_blob & ~7UL;
+				if (adtb != dtb_blob) {
+					void *dp = map_sysmem(adtb, ts);
+					void *sp = map_sysmem(dtb_blob, ts);
+
+					memmove(dp, sp, ts);
+					unmap_sysmem(sp);
+					unmap_sysmem(dp);
+				}
+				snprintf(fdtbuf, sizeof(fdtbuf), "0x%lx", adtb);
 				fdtarg = fdtbuf;
-				printf("Appended dtb     : 0x%lx\n", dtb_blob);
+				printf("Appended dtb     : 0x%lx (%lu bytes, aligned 0x%lx)\n",
+				       dtb_blob, ts, adtb);
+			} else {
+				printf("Appended dtb     : none found in 0x%lx bytes from 0x%lx\n",
+				       scan_end - payload, payload);
 			}
 		}
 
@@ -340,42 +334,37 @@ static int do_bootappended(struct cmd_tbl *cmdtp, int flag, int argc,
 				snprintf(rdbuf, sizeof(rdbuf), "%s",
 					 env_get("appended_ramdisk"));
 			rdarg = rdbuf;
-		} else if (dtb_blob) {
-			u8 rh[16];
-			u8 dh[8];
+		} else if (dtb_blob && rd) {
+			ulong win_end, rsz;
 
-			p = map_sysmem(dtb_blob, sizeof(dh));
-			memcpy(dh, p, sizeof(dh));
-			unmap_sysmem(p);
-			rd = dtb_blob + be32_at(dh + 4);
+			/*
+			 * Ramdisk = everything appended after the dtb (one or
+			 * more concatenated archives, any format Linux groks).
+			 * cat'd data has no end marker, so extend to the end of
+			 * the 256MB normal-memory window the bootloader loaded
+			 * into and trim trailing zero padding; Linux ignores any
+			 * junk past the last archive. appended_ramdisk_size
+			 * overrides this.
+			 */
+			win_end = (base & ~0xfffffffUL) + 0x10000000UL;
+			rsz = env_get_ulong("appended_ramdisk_size", 16, 0);
+			if (!rsz && win_end > rd) {
+				ulong n = win_end - rd;
+				u8 *q = map_sysmem(rd, n);
 
-			p = map_sysmem(rd, sizeof(rh));
-			memcpy(rh, p, sizeof(rh));
-			unmap_sysmem(p);
-
-			if (be32_at(rh) == IH_MAGIC || be32_at(rh) == FDT_MAGIC) {
-				/* uImage / FIT ramdisk: size is self-describing */
-				snprintf(rdbuf, sizeof(rdbuf), "0x%lx", rd);
+				while (n && q[n - 1] == 0)
+					n--;
+				unmap_sysmem(q);
+				rsz = n;
+			}
+			if (rsz) {
+				snprintf(rdbuf, sizeof(rdbuf), "0x%lx:0x%lx",
+					 rd, rsz);
 				rdarg = rdbuf;
-				printf("Appended ramdisk : 0x%lx (%s)\n", rd,
-				       be32_at(rh) == IH_MAGIC ? "uImage" : "FIT");
+				printf("Appended ramdisk : 0x%lx size 0x%lx\n",
+				       rd, rsz);
 			} else {
-				ulong rsz = env_get_ulong("appended_ramdisk_size",
-							  16, 0);
-
-				if (!rsz)
-					rsz = cpio_newc_size(rd, scan_end - rd);
-				if (rsz) {
-					snprintf(rdbuf, sizeof(rdbuf),
-						 "0x%lx:0x%lx", rd, rsz);
-					rdarg = rdbuf;
-					printf("Appended ramdisk : 0x%lx size 0x%lx\n",
-					       rd, rsz);
-				} else if (image_decomp_type(rh, sizeof(rh)) > 0) {
-					printf("Appended ramdisk : 0x%lx (compressed, size unknown)\n"
-					       "  set 'appended_ramdisk_size'; booting without it\n",
-					       rd);
-				}
+				printf("Appended ramdisk : 0x%lx (empty)\n", rd);
 			}
 		}
 
