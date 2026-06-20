@@ -39,6 +39,7 @@ obj-$(CONFIG_CMD_BOOTMENU) += bootmenu.o
 obj-$(CONFIG_CMD_BOOTSTAGE) += bootstage.o
 obj-$(CONFIG_CMD_BOOTZ) += bootz.o
 obj-$(CONFIG_CMD_BOOTI) += booti.o
+obj-$(CONFIG_CMD_BOOTAPPENDED) += bootappended.o
 obj-$(CONFIG_CMD_BTRFS) += btrfs.o
 obj-$(CONFIG_CMD_BUTTON) += button.o
 obj-$(CONFIG_CMD_C5_PL330_DMA) += c5_pl330_dma.o

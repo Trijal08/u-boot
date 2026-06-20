@@ -403,6 +403,26 @@ config CMD_BOOTI
 	help
 	  Boot an AArch64 Linux Kernel image from memory.
 
+config CMD_BOOTAPPENDED
+	bool "bootappended"
+	depends on ARM64
+	help
+	  Boot an image concatenated directly after the U-Boot binary in
+	  memory. The payload address is computed as
+	  CONFIG_APPENDED_PAYLOAD_BASE plus the size of the U-Boot image
+	  (__image_copy_end - __image_copy_start). EFI applications, arm64
+	  Linux 'Image', FIT and legacy uImage formats are auto-detected, as
+	  is any compression U-Boot supports (gzip/bzip2/lzma/lzo/lz4/zstd).
+
+config APPENDED_PAYLOAD_BASE
+	hex "Load address of the U-Boot image before relocation"
+	depends on CMD_BOOTAPPENDED
+	default 0x0
+	help
+	  The address the previous-stage bootloader loads u-boot.bin to,
+	  before U-Boot relocates itself to the top of DRAM. The appended
+	  payload is found at this address plus the U-Boot image size.
+
 config BOOTM_LINUX
 	bool "Support booting Linux OS images"
 	depends on CMD_BOOTM || CMD_BOOTZ || CMD_BOOTI
